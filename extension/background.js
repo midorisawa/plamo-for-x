@@ -19,21 +19,21 @@ async function ensureOffscreen() {
   await creating;
 }
 
-chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());
-
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message.type === "warm-translation" && sender.tab) {
     (async () => {
       await ensureOffscreen();
-      const { inferenceMode: mode = "auto" } = await chrome.storage.local.get("inferenceMode");
-      return chrome.runtime.sendMessage({ type: "warm-engine", mode });
+      const { inferenceMode: mode = "auto", selectedModel } =
+        await chrome.storage.local.get(["inferenceMode", "selectedModel"]);
+      return chrome.runtime.sendMessage({ type: "warm-engine", mode, selectedModel });
     })().then(respond, () => respond());
     return true;
   }
   if (message.type === "translate-post" && sender.tab?.id !== undefined && sender.documentId) {
     (async () => {
       await ensureOffscreen();
-      const { inferenceMode: mode = "auto" } = await chrome.storage.local.get("inferenceMode");
+      const { inferenceMode: mode = "auto", selectedModel } =
+        await chrome.storage.local.get(["inferenceMode", "selectedModel"]);
       return chrome.runtime.sendMessage({
         type: "infer",
         id: message.id,
@@ -42,6 +42,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         postId: message.postId,
         preview: message.preview,
         mode,
+        selectedModel,
         tabId: sender.tab.id,
         documentId: sender.documentId,
       });

@@ -1,8 +1,7 @@
-import { importModel, savedModel } from "./model.js";
+import { setupModelSettings } from "./model-settings.js";
 import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translation-cache.js";
 
-const input = document.querySelector('input[type="file"]');
-const status = document.querySelector("#status");
+setupModelSettings(chrome.extension.getViews({ type: "popup" }).includes(window));
 const languageSelect = document.querySelector("#target-language");
 const languageStatus = document.querySelector("#language-status");
 const inferenceSelect = document.querySelector("#inference-mode");
@@ -43,10 +42,11 @@ const sourceLanguageChoices = document.querySelector("#source-language-choices")
 const sourceLanguageStatus = document.querySelector("#source-language-status");
 const sourceInputs = [...translationLanguages, "und"].map(code => {
   const label = document.createElement("label");
+  label.className = "check";
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.value = code;
-  label.append(checkbox, " ", code === "und" ? "言語を判定できない原文" : languageNames.of(code));
+  label.append(checkbox, code === "und" ? "言語を判定できない原文" : languageNames.of(code));
   sourceLanguageChoices.append(label);
   return checkbox;
 });
@@ -130,29 +130,6 @@ try {
   autoTranslateStatus.textContent = "自動翻訳の設定を読み込めませんでした。";
 }
 
-try {
-  status.textContent = await savedModel() ? "モデルを保存済みです。" : "モデルが未登録です。";
-} catch {
-  status.textContent = "モデルの保存先を確認できませんでした。";
-}
-
-input.addEventListener("change", async () => {
-  const file = input.files[0];
-  if (!file) return;
-  input.disabled = true;
-  status.textContent = "モデルを保存中…";
-  try {
-    await importModel(file);
-    status.textContent = "モデルを保存しました。Xで翻訳できます。";
-  } catch (error) {
-    status.textContent = `モデルを保存できませんでした。 ${error.message}`;
-  } finally {
-    input.value = "";
-    input.disabled = false;
-  }
-});
-input.disabled = false;
-
 const mebibyte = 1024 * 1024;
 const cacheSettings = document.querySelector("#cache-settings");
 const cacheFields = cacheSettings.querySelector("fieldset");
@@ -186,8 +163,13 @@ cacheSettings.addEventListener("submit", event => {
   const limit = cacheLimitInput.valueAsNumber * mebibyte;
   updateCacheSettings(() => setCacheLimit(limit), "キャッシュの上限を保存しました。", "キャッシュの上限を保存できませんでした。");
 });
+const clearCacheDialog = document.querySelector("#clear-cache-dialog");
 document.querySelector("#clear-cache").addEventListener("click", () => {
-  if (window.confirm("保存済みの翻訳キャッシュをすべて削除しますか？")) {
+  clearCacheDialog.returnValue = "";
+  clearCacheDialog.showModal();
+});
+clearCacheDialog.addEventListener("close", () => {
+  if (clearCacheDialog.returnValue === "confirm") {
     updateCacheSettings(clearTranslationCache, "キャッシュを削除しました。", "キャッシュを削除できませんでした。");
   }
 });

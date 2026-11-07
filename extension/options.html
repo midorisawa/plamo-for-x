@@ -3,47 +3,111 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SNS Translatorの設定</title>
-<h1>SNS Translatorの設定</h1>
-<label>翻訳先の言語 <select id="target-language" disabled></select></label>
-<p id="language-status" role="status"></p>
-<details>
-  <summary>翻訳する原文の言語</summary>
-  <fieldset id="source-languages" disabled>
-    <legend>翻訳対象</legend>
-    <label><input id="all-source-languages" type="checkbox" checked> すべての言語を対象にする</label>
-    <div>
-      <p>翻訳する言語を選択してください。複数選べます。</p>
-      <div id="source-language-choices" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 4px;"></div>
+<link rel="stylesheet" href="options.css">
+<main>
+  <header class="settings-header">
+    <img src="icons/local-translator-48.png" width="32" height="32" alt="">
+    <h1>SNS Translatorの設定</h1>
+  </header>
+
+  <section aria-labelledby="translation-title">
+    <h2 id="translation-title">翻訳</h2>
+    <label class="field">翻訳先の言語
+      <select id="target-language" disabled></select>
+    </label>
+    <p id="language-status" role="status"></p>
+    <details>
+      <summary>翻訳する原文の言語</summary>
+      <fieldset id="source-languages" aria-label="翻訳対象" disabled>
+        <label class="check"><input id="all-source-languages" type="checkbox" checked>すべての言語を対象にする</label>
+        <p class="muted">翻訳する言語を選択してください。複数選べます。</p>
+        <div id="source-language-choices"></div>
+      </fieldset>
+      <p id="source-language-status" role="status"></p>
+    </details>
+    <label class="check">
+      <input id="auto-translate" type="checkbox" disabled>読み込まれた投稿から順に自動で翻訳する
+    </label>
+    <p id="auto-translate-status" role="status"></p>
+  </section>
+
+  <section id="model" aria-labelledby="model-title">
+    <h2 id="model-title">モデルと実行先</h2>
+    <label class="field">翻訳の実行先
+      <select id="inference-mode" disabled>
+        <option value="auto">自動（GPU優先）</option>
+        <option value="gpu">GPU（WebGPU）</option>
+        <option value="cpu">CPU</option>
+      </select>
+    </label>
+    <p id="inference-status" role="status"></p>
+    <div class="model-panel">
+      <label class="field">翻訳に使うモデル
+        <select id="selected-model" disabled><option value="">確認中…</option></select>
+      </label>
+      <p id="model-selection-status" role="status"></p>
+      <a id="open-model-settings" href="options.html#model" target="_blank" rel="noopener">モデル管理を開く</a>
+      <button id="show-model-manager" type="button" hidden>モデル管理を開く</button>
     </div>
-  </fieldset>
-  <p id="source-language-status" role="status"></p>
-</details>
-<label>翻訳の実行先
-  <select id="inference-mode" disabled>
-    <option value="auto">自動（GPU優先）</option>
-    <option value="gpu">GPU（WebGPU）</option>
-    <option value="cpu">CPU</option>
-  </select>
-</label>
-<p id="inference-status" role="status"></p>
-<label><input id="auto-translate" type="checkbox" disabled> 投稿とコミュニティノートを読み込み順に自動翻訳する</label>
-<p id="auto-translate-status" role="status"></p>
-<p>Xの投稿を翻訳するには、PLaMo 3 Translateの0.8Bモデルを読み込んでください。</p>
-<p><a href="https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF/resolve/main/plamo-3-translate-0.8b-Q4_K_M.gguf">モデルをダウンロード（約573MB）</a></p>
-<label>ダウンロードしたGGUFファイル <input type="file" accept=".gguf" disabled></label>
-<p role="status" id="status">モデルを確認中…</p>
-<form id="cache-settings">
-  <fieldset disabled>
-    <legend>翻訳キャッシュ</legend>
-    <p>使用量 <meter id="cache-meter" aria-label="翻訳キャッシュの使用量" min="0" max="1" value="0"></meter>
-      <span id="cache-usage" role="status">確認中…</span>
-    </p>
-    <label>上限（MiB） <input id="cache-limit" type="number" min="1" step="1" required></label>
-    <button type="submit">上限を保存</button>
-    <button id="clear-cache" type="button">キャッシュを削除</button>
-  </fieldset>
-  <p id="cache-status" role="status"></p>
-</form>
+  </section>
+
+  <section aria-labelledby="cache-title">
+    <h2 id="cache-title">翻訳キャッシュ</h2>
+    <form id="cache-settings">
+      <fieldset disabled>
+        <div class="cache-usage">
+          <span>使用量</span>
+          <span id="cache-usage" role="status">確認中…</span>
+          <meter id="cache-meter" aria-label="翻訳キャッシュの使用量" min="0" max="1" value="0"></meter>
+        </div>
+        <div class="actions cache-actions">
+          <label class="field">上限（MiB）
+            <input id="cache-limit" type="number" min="1" step="1" required>
+          </label>
+          <button type="submit">上限を保存</button>
+          <button id="clear-cache" class="danger" type="button">キャッシュを削除</button>
+        </div>
+      </fieldset>
+      <p id="cache-status" role="status"></p>
+    </form>
+  </section>
+</main>
+<dialog id="model-manager" aria-labelledby="model-manager-title">
+  <header class="manager-header">
+    <h2 id="model-manager-title">モデル管理</h2>
+    <form method="dialog"><button class="close-button" aria-label="モデル管理を閉じる">×</button></form>
+  </header>
+  <h3>モデル一覧</h3>
+  <p class="muted">必要なモデルだけダウンロードできます。モデルはこのブラウザに保存されます。</p>
+  <div id="model-list"></div>
+  <p id="model-feedback" role="status"></p>
+  <div class="model-import">
+    <label class="field">保存済みのGGUFモデルを取り込む
+      <input id="import-model" type="file" accept=".gguf" disabled>
+    </label>
+  </div>
+  <p class="muted">モデルには<a href="https://plamo.preferredai.jp/info/plamo-community-license-ja" target="_blank" rel="noopener">PLaMoコミュニティライセンス</a>が適用されます。</p>
+</dialog>
+<template id="model-row">
+  <div class="model-row">
+    <div>
+      <strong></strong>
+      <small></small>
+      <progress hidden></progress>
+    </div>
+    <button class="download-model" type="button">ダウンロード</button>
+    <button class="cancel-download" type="button" hidden>中止</button>
+    <button class="remove-model danger" type="button" hidden>削除</button>
+  </div>
+</template>
+<dialog id="clear-cache-dialog" aria-labelledby="clear-cache-title" aria-describedby="clear-cache-description">
+  <h2 id="clear-cache-title">翻訳キャッシュを削除</h2>
+  <p id="clear-cache-description">保存済みの翻訳キャッシュをすべて削除しますか？</p>
+  <form method="dialog" class="actions">
+    <button value="cancel" autofocus>キャンセル</button>
+    <button value="confirm" class="danger">削除する</button>
+  </form>
+</dialog>
 <script src="languages.js"></script>
 <script type="module" src="options.js"></script>
 </html>

@@ -1,8 +1,8 @@
-import { savedModel } from "./model.js";
+import { activeModel, defaultModel } from "./model.js";
 import { readTranslation, saveTranslation } from "./translation-cache.js";
 
 let worker;
-let modelVersion;
+let loadedModel;
 let workerMode;
 let idleTimer;
 let preparing;
@@ -30,17 +30,18 @@ function keepWorkerReady() {
   idleTimer = setTimeout(resetWorker, 5 * 60 * 1000);
 }
 
-function prepare(mode, model) {
+function prepare(mode, model, selectedModel) {
   preparing ??= (async () => {
     clearTimeout(idleTimer);
-    model ??= await savedModel();
+    model ??= (await activeModel(selectedModel))?.file;
     if (!model) throw new Error("拡張機能の設定でモデルを読み込んでください。");
-    if (worker && model.lastModified === modelVersion && mode === workerMode) return;
+    if (worker && model.name === loadedModel.name && model.lastModified === loadedModel.lastModified &&
+        model.size === loadedModel.size && mode === workerMode) return;
     resetWorker();
     worker = new Worker("./inference-worker.js", { type: "module" });
     const result = await runWorker({ blob: model, mode });
     if (result.error) throw new Error(result.error);
-    modelVersion = model.lastModified;
+    loadedModel = { name: model.name, lastModified: model.lastModified, size: model.size };
     workerMode = mode;
   })().catch(error => {
     resetWorker();
@@ -71,12 +72,14 @@ async function infer(message, respond) {
     return chrome.runtime.sendMessage({ type: "inference-result", id, tabId, documentId, result }).catch(() => {});
   }
 
-  const model = await savedModel();
-  if (!model) {
+  const active = await activeModel(message.selectedModel);
+  if (!active) {
     respond({ error: "拡張機能の設定でモデルを読み込んでください。" });
     return;
   }
+  const { id: modelId, file: model } = active;
   const keyParts = [model.lastModified, model.size, target];
+  if (modelId !== defaultModel) keyParts.unshift(modelId);
   const translationKey = source => JSON.stringify([1, ...keyParts, source]);
   const previewKey = postId && JSON.stringify(["preview", ...keyParts, postId]);
   const key = translationKey(text);
@@ -140,7 +143,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.tab) return;
   if (message.type === "warm-engine") {
     respond({ accepted: true });
-    if (!busy) prepare(message.mode).catch(() => {});
+    if (!busy) prepare(message.mode, undefined, message.selectedModel).catch(() => {});
     return;
   }
   if (message.type !== "infer") return;

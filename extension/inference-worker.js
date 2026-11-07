@@ -1,4 +1,4 @@
-// 参考Web UIの推論処理とPLaMo翻訳プロンプトを0.8Bの日本語訳用に絞る
+// 参考Web UIの推論処理とPLaMo翻訳プロンプトを使う
 let runtime;
 
 async function loadModel(blob, gpu) {
