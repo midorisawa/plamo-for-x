@@ -364,7 +364,7 @@ function mount(root) {
       } catch {
         // 言語タグが不正な場合はモデル名だけを表示する
       }
-      label.textContent = source ? `${source}からの翻訳 · PLaMo` : "PLaMoによる翻訳";
+      label.textContent = source ? `PLaMoによる${source}からの翻訳` : "PLaMoによる翻訳";
     }
     function finish(result) {
       const partial = result.partial !== undefined;
