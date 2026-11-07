@@ -76,15 +76,26 @@ async function writeCache(write) {
   });
 }
 
-export async function saveTranslation(key, result) {
+export async function readCacheRevision() {
+  const db = await openCache();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction("metadata").objectStore("metadata").get("revision");
+    request.onsuccess = () => resolve(request.result ?? 0);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function saveTranslation(key, result, revision) {
   const now = Date.now();
   const entry = { result, createdAt: now };
   const size = entryBytes(key, entry);
   return writeCache((store, metadata) => {
     const configured = metadata.get("limit");
     const total = metadata.get("bytes");
+    const currentRevision = metadata.get("revision");
     const previous = store.get(key);
     previous.onsuccess = () => {
+      if (revision !== undefined && revision !== (currentRevision.result ?? 0)) return;
       const limit = configured.result ?? defaultCacheLimit;
       if (size > limit) return;
       const replacedSize = previous.result ? entryBytes(key, previous.result) : 0;
@@ -119,5 +130,7 @@ export async function clearTranslationCache() {
   return writeCache((store, metadata) => {
     store.clear();
     metadata.put(0, "bytes");
+    const revision = metadata.get("revision");
+    revision.onsuccess = () => metadata.put((revision.result ?? 0) + 1, "revision");
   });
 }

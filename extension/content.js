@@ -37,7 +37,8 @@ function requestTranslation(text, target, glossary, onPartial, postId, preview) 
       pending.delete(id);
       resolve(result);
     }
-    const timer = setTimeout(() => finish({ error: "翻訳に時間がかかっています。もう一度お試しください。" }), 180000);
+    // Worker側の事前読み込み・再読み込み・翻訳がそれぞれ終わるまで待つ
+    const timer = setTimeout(() => finish({ error: "翻訳に時間がかかっています。もう一度お試しください。" }), 10 * 60 * 1000);
     pending.set(id, finish);
     async function send() {
       try {
@@ -173,14 +174,17 @@ function switchNativeTranslation(root, post, translated) {
       observer.disconnect();
       resolve(original);
     }
-    function check() {
+    function check(deadline = false) {
       const current = readTarget(root);
       if (!root.isConnected || (current && current.id !== post.id)) finish(null);
-      else if (current && (current.native ? current.native.translated === translated
+      else if (current && (current.native
+        ? current.native.translated === translated && (current.text !== post.text || deadline)
         : !translated && current.text !== post.text)) finish(current);
+      else if (deadline) finish(null);
     }
-    const observer = new MutationObserver(check);
-    const timer = setTimeout(() => finish(null), 3000);
+    const observer = new MutationObserver(() => check());
+    // ボタンだけ先に変わる場合に備え、同じ本文は待機期限まで保留する
+    const timer = setTimeout(() => check(true), 3000);
     observer.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["lang", "dir"] });
     post.native.button.click();
     check();
@@ -204,7 +208,7 @@ function mount(root) {
   const collapsed = !isNote && !isProfile && (post?.shortened || [...root.querySelectorAll(showMoreSelector)]
     .some(control => control.closest(targetSelector) === root));
   const known = originalLanguages.get(root);
-  const source = post?.native?.translated || (isProfile && !post?.language)
+  const source = post && (post.native?.translated || (isProfile && !post.language))
     ? (known?.id === post.id && known?.text === post.text ? known.language : null)
     : translationLanguage(post?.language);
   if (post && canTranslate(source, target) && previous?.target === target &&

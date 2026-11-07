@@ -1,6 +1,6 @@
 import { activeModel, defaultModel } from "./model.js";
 import { checkGpu } from "./gpu.js";
-import { readTranslation, saveTranslation } from "./translation-cache.js";
+import { readCacheRevision, readTranslation, saveTranslation } from "./translation-cache.js";
 import { glossaryLimit, validGlossaryTerm } from "./glossary.js";
 import { runWorker } from "./inference-client.js";
 
@@ -43,7 +43,7 @@ function prepare(mode, model, selectedModel) {
     resetWorker();
     worker = new Worker("./inference-worker.js", { type: "module" });
     const result = await runWorker(worker, { model, mode });
-    if (result.error) throw new Error(result.error);
+    if (!result.ready) throw new Error(result.error ?? "モデルを読み込めませんでした。");
     loadedModel = { name: model.name, lastModified: model.lastModified, size: model.size };
     workerMode = mode;
   })().catch(error => {
@@ -84,6 +84,10 @@ async function infer(message, respond) {
     respond({ error: "用語集の原語と訳語を確認してください。" });
     return;
   }
+  const revision = await readCacheRevision().catch(() => undefined);
+  async function save(key, result) {
+    if (revision !== undefined) await saveTranslation(key, result, revision).catch(() => {});
+  }
   const active = await activeModel(message.selectedModel);
   if (!active) {
     respond({ error: "拡張機能の設定でモデルを読み込んでください。" });
@@ -106,7 +110,7 @@ async function infer(message, respond) {
 
   async function rememberPreview(result) {
     if (previewKey && preview && result.text && !result.truncated) {
-      await saveTranslation(previewKey, { ...preview, text: result.text }).catch(() => {});
+      await save(previewKey, { ...preview, text: result.text });
     }
   }
 
@@ -132,7 +136,7 @@ async function infer(message, respond) {
         result = cachedSuffix ?? await translate(suffix, target, mode, model, glossary,
           ({ partial }) => sendResult({ partial: prefix + partial }));
         if (result.text && !result.truncated && !cachedSuffix) {
-          await saveTranslation(suffixKey, result).catch(() => {});
+          await save(suffixKey, result);
         }
         if (result.text) result = { ...result, text: prefix + result.text };
       } else {
@@ -141,7 +145,7 @@ async function infer(message, respond) {
     } else {
       result = await translate(text, target, mode, model, glossary, sendResult);
     }
-    if (result.text && !result.truncated) await saveTranslation(key, result).catch(() => {});
+    if (result.text && !result.truncated) await save(key, result);
     await rememberPreview(result);
   } catch (error) {
     resetWorker();

@@ -42,26 +42,26 @@ export async function activeModel(selectedModel, available) {
   return null;
 }
 
-async function saveModel(id, stream, signal) {
-  signal?.throwIfAborted();
-  const writer = await (await modelHandle(id, true)).createWritable();
-  await stream.pipeTo(writer, { signal });
-}
-
-export async function importModel(file) {
-  const model = models.find(({ id, bundled }) => !bundled && file.name === modelFilename(id));
+async function validateModel(file, signal) {
   const header = new TextDecoder().decode(await file.slice(0, 4).arrayBuffer());
-  if (!model || file.size < 24 || header !== "GGUF") {
+  if (file.size < 24 || header !== "GGUF") {
     throw new Error("PLaMo 3 Translate 2BのQ4_K_M形式のGGUFファイルを選択してください。");
   }
   const worker = new Worker("./inference-worker.js", { type: "module" });
   try {
-    const result = await runWorker(worker, { model: file, mode: "cpu" });
+    const result = await runWorker(worker, { model: file, mode: "cpu" }, undefined, signal);
     if (!result.ready) throw new Error(result.error ?? "モデルを読み込めませんでした。");
   } finally {
     worker.terminate();
   }
-  await saveModel(model.id, file.stream());
+}
+
+export async function importModel(file) {
+  const model = models.find(({ id, bundled }) => !bundled && file.name === modelFilename(id));
+  if (!model) throw new Error("PLaMo 3 Translate 2BのQ4_K_M形式のGGUFファイルを選択してください。");
+  await validateModel(file);
+  const writer = await (await modelHandle(model.id, true)).createWritable();
+  await file.stream().pipeTo(writer);
 }
 
 export async function downloadModel(id, progress, signal) {
@@ -77,7 +77,18 @@ export async function downloadModel(id, progress, signal) {
       controller.enqueue(chunk);
     },
   }));
-  await saveModel(id, stream, signal);
+  const directory = await navigator.storage.getDirectory();
+  const stagedName = `${modelFilename(id)}.download`;
+  const staged = await directory.getFileHandle(stagedName, { create: true });
+  try {
+    await stream.pipeTo(await staged.createWritable(), { signal });
+    await validateModel(await staged.getFile(), signal);
+    signal?.throwIfAborted();
+    await staged.move(modelFilename(id));
+  } catch (error) {
+    await directory.removeEntry(stagedName).catch(() => {});
+    throw error;
+  }
 }
 
 export async function deleteModel(id) {
