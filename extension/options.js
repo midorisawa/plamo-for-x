@@ -25,7 +25,14 @@ for (const code of translationLanguages) {
 const sourceLanguagesField = document.querySelector("#source-languages");
 const allSourceLanguages = document.querySelector("#all-source-languages");
 const sourceLanguageChoices = document.querySelector("#source-language-choices");
-const sourceInputs = [...translationLanguages, "und"].map(code => {
+const priorityEnd = translationLanguages.indexOf("ko") + 1;
+const japaneseOrder = new Intl.Collator("ja");
+const sourceLanguagesInOrder = [
+  ...translationLanguages.slice(0, priorityEnd),
+  ...translationLanguages.slice(priorityEnd).sort((a, b) => japaneseOrder.compare(languageNames.of(a), languageNames.of(b))),
+  "und",
+];
+const sourceInputs = sourceLanguagesInOrder.map(code => {
   const label = document.createElement("label");
   label.className = "check";
   const checkbox = document.createElement("input");
@@ -36,15 +43,26 @@ const sourceInputs = [...translationLanguages, "und"].map(code => {
   return checkbox;
 });
 
+function visibleSourceInputs() {
+  return sourceInputs.filter(checkbox => !checkbox.parentElement.hidden);
+}
+
+function updateSourceChoices() {
+  const target = languageSelect.value || browserLanguage;
+  for (const checkbox of sourceInputs) checkbox.parentElement.hidden = checkbox.value === target;
+  updateSourceSummary();
+}
+
 function readSourceLanguages() {
   const checked = sourceInputs.filter(checkbox => checkbox.checked).map(checkbox => checkbox.value);
   return checked.length === sourceInputs.length ? null : checked;
 }
 
 function updateSourceSummary() {
-  const checked = readSourceLanguages();
-  allSourceLanguages.checked = checked === null;
-  allSourceLanguages.indeterminate = Boolean(checked?.length);
+  const visible = visibleSourceInputs();
+  const checkedCount = visible.filter(checkbox => checkbox.checked).length;
+  allSourceLanguages.checked = checkedCount === visible.length;
+  allSourceLanguages.indeterminate = checkedCount > 0 && !allSourceLanguages.checked;
 }
 
 function readSettings() {
@@ -56,9 +74,10 @@ function readSettings() {
   };
 }
 
+languageSelect.addEventListener("change", updateSourceChoices);
 sourceLanguagesField.addEventListener("change", event => {
   if (event.target === allSourceLanguages) {
-    for (const checkbox of sourceInputs) checkbox.checked = allSourceLanguages.checked;
+    for (const checkbox of visibleSourceInputs()) checkbox.checked = allSourceLanguages.checked;
   }
   updateSourceSummary();
 });
@@ -69,9 +88,9 @@ try {
     await chrome.storage.local.get(["targetLanguage", "sourceLanguages", "inferenceMode", "autoTranslate"]);
   languageSelect.value = translationLanguage(targetLanguage);
   for (const checkbox of sourceInputs) checkbox.checked = sourceLanguages?.includes(checkbox.value) ?? true;
-  updateSourceSummary();
   inferenceSelect.value = inferenceMode === "gpu" || inferenceMode === "cpu" ? inferenceMode : "auto";
   autoTranslate.checked = automatic === true;
+  updateSourceChoices();
   savedSettings = readSettings();
   for (const control of [languageSelect, sourceLanguagesField, inferenceSelect, autoTranslate]) control.disabled = false;
   settingsFields.disabled = false;

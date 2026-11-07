@@ -98,7 +98,8 @@ details, .model-panel {
 
 summary { padding: .65rem .8rem; border-radius: inherit; }
 details > :not(summary) { margin: .75rem; }
-#source-language-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr)); gap: .4rem .75rem; margin-top: .65rem; }
+#source-language-choices { columns: 9rem; column-gap: .75rem; margin-top: .65rem; }
+#source-language-choices .check { break-inside: avoid; padding-block: .2rem; }
 .model-panel { margin-bottom: 0; padding: .75rem .8rem; }
 #open-model-settings, #show-model-manager { margin-top: .65rem; }
 #open-model-settings { display: inline-block; }
