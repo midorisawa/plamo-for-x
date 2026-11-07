@@ -1,5 +1,5 @@
 export const models = [
-  { id: "0.8b", label: "0.8B", size: "約573MB" },
+  { id: "0.8b", label: "0.8B", size: "約573MB", bundled: true },
   { id: "2b", label: "2B", size: "約1.81GB" },
 ];
 
@@ -11,7 +11,16 @@ async function modelHandle(id, create) {
   return (await navigator.storage.getDirectory()).getFileHandle(modelFilename(id), { create });
 }
 
-export async function savedModel(id = defaultModel) {
+export async function modelSource(id) {
+  if (id === defaultModel) {
+    const name = modelFilename(id);
+    return {
+      name,
+      size: 573125952,
+      lastModified: 0,
+      url: chrome.runtime.getURL(`models/${name}`),
+    };
+  }
   try {
     const file = await (await modelHandle(id, false)).getFile();
     return file.size ? file : null;
@@ -25,8 +34,8 @@ export async function activeModel(selectedModel, available) {
   const preferred = models.find(({ id }) => id === selectedModel);
   const ordered = preferred ? [preferred, ...models.filter(model => model !== preferred)] : models;
   for (const { id } of ordered) {
-    const file = available ? available.get(id) : await savedModel(id);
-    if (file) return { id, file };
+    const source = available ? available.get(id) : await modelSource(id);
+    if (source) return { id, source };
   }
   return null;
 }
@@ -38,10 +47,10 @@ async function saveModel(id, stream, signal) {
 }
 
 export async function importModel(file) {
-  const model = models.find(({ id }) => file.name === modelFilename(id));
+  const model = models.find(({ id, bundled }) => !bundled && file.name === modelFilename(id));
   const header = new TextDecoder().decode(await file.slice(0, 4).arrayBuffer());
   if (!model || header !== "GGUF") {
-    throw new Error("PLaMo 3 Translateの0.8Bまたは2BのQ4_K_M形式のGGUFファイルを選択してください。");
+    throw new Error("PLaMo 3 Translate 2BのQ4_K_M形式のGGUFファイルを選択してください。");
   }
   await saveModel(model.id, file.stream());
 }

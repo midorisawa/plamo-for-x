@@ -1,4 +1,4 @@
-import { activeModel, deleteModel, downloadModel, importModel, models, savedModel, withModelLock } from "./model.js";
+import { activeModel, defaultModel, deleteModel, downloadModel, importModel, models, modelSource, withModelLock } from "./model.js";
 
 export function setupModelSettings(popup) {
   const select = document.querySelector("#selected-model");
@@ -17,7 +17,7 @@ export function setupModelSettings(popup) {
   showManager.addEventListener("click", () => manager.showModal());
   if (!popup && location.hash === "#model") manager.showModal();
 
-  const rows = popup ? [] : models.map(({ id, label, size }) => {
+  const rows = popup ? [] : models.flatMap(({ id, label, size, bundled }) => {
     const row = template.content.firstElementChild.cloneNode(true);
     const name = `PLaMo 3 Translate ${label}`;
     row.querySelector("strong").textContent = name;
@@ -30,6 +30,12 @@ export function setupModelSettings(popup) {
     download.setAttribute("aria-label", `${name}をダウンロード`);
     cancel.setAttribute("aria-label", `${name}のダウンロードを中止`);
     remove.setAttribute("aria-label", `${name}を削除`);
+    list.append(row);
+    if (bundled) {
+      status.textContent = `${size}・同梱`;
+      download.hidden = true;
+      return [];
+    }
     status.textContent = size;
     download.disabled = true;
 
@@ -62,8 +68,7 @@ export function setupModelSettings(popup) {
         changeFiles(() => deleteModel(id), `${name}を削除しました。`);
       }
     });
-    list.append(row);
-    return { id, size, status, download, remove };
+    return [{ id, size, status, download, remove }];
   });
 
   function disableControls() {
@@ -79,7 +84,7 @@ export function setupModelSettings(popup) {
 
   async function refresh() {
     try {
-      const available = new Map(await Promise.all(models.map(async ({ id }) => [id, await savedModel(id)])));
+      const available = new Map(await Promise.all(models.map(async ({ id }) => [id, await modelSource(id)])));
       const active = await readActiveModel(available);
       const draft = select.selectedOptions[0]?.defaultSelected ? "" : select.value;
       const options = models.filter(({ id }) => available.get(id))
@@ -121,9 +126,8 @@ export function setupModelSettings(popup) {
     return run(async () => {
       const previous = await readActiveModel();
       await action();
-      const id = previous && await savedModel(previous.id) ? previous.id : (await readActiveModel())?.id;
-      if (id) await chrome.storage.local.set({ selectedModel: id });
-      else await chrome.storage.local.remove("selectedModel");
+      const id = previous && await modelSource(previous.id) ? previous.id : defaultModel;
+      await chrome.storage.local.set({ selectedModel: id });
     }, feedback, success, signal);
   }
 

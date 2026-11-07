@@ -1,4 +1,4 @@
-import { savedModel, withModelLock } from "./model.js";
+import { modelSource, withModelLock } from "./model.js";
 import { setupModelSettings } from "./model-settings.js";
 import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translation-cache.js";
 
@@ -125,7 +125,7 @@ settingsForm.addEventListener("submit", async event => {
   try {
     if (changes.selectedModel) {
       await withModelLock(async () => {
-        if (!await savedModel(changes.selectedModel)) throw new Error("選択したモデルは削除されました。");
+        if (!await modelSource(changes.selectedModel)) throw new Error("選択したモデルは削除されました。");
         await chrome.storage.local.set(changes);
       });
       for (const option of modelSelect.options) option.defaultSelected = option.value === changes.selectedModel;

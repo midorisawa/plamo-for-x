@@ -22,7 +22,13 @@ async function loadModel(blob, gpu) {
   return { module, call };
 }
 
-async function prepareModel(blob, mode) {
+async function prepareModel(model, mode) {
+  let blob = model;
+  if (model.url) {
+    const response = await fetch(model.url);
+    if (!response.ok) throw new Error("同梱モデルを開けませんでした。");
+    blob = await response.blob();
+  }
   if (mode === "cpu") return loadModel(blob, false);
 
   try {
@@ -33,9 +39,9 @@ async function prepareModel(blob, mode) {
   }
 }
 
-self.onmessage = async ({ data: { text, blob, target, mode } }) => {
+self.onmessage = async ({ data: { text, model, target, mode } }) => {
   try {
-    runtime ??= await prepareModel(blob, mode);
+    runtime ??= await prepareModel(model, mode);
     if (text === undefined) {
       self.postMessage({ ready: true });
       return;

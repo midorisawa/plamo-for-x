@@ -6,8 +6,11 @@ ChromeでXの投稿本文をPLaMo 3 Translateの0.8Bまたは2Bモデルで翻�
 
 1. Chromeで `chrome://extensions` を開き、デベロッパーモードを有効にします。
 2. 「パッケージ化されていない拡張機能を読み込む」から、このリポジトリの `extension` フォルダーを選びます。
-3. 拡張機能のアイコンから設定を開き、「モデル管理を開く」を押します。モデル一覧から0.8B（約573MB）または2B（約1.81GB）をダウンロードします。取得済みのQ4_K_M形式のGGUFファイルも取り込めます。両方を保存した場合は「翻訳に使うモデル」で選び、「保存」を押して切り替えます。
-4. Xを開き直し、投稿本文の上にある「PLaMoで翻訳」を押します。訳文は生成された部分から本文と同じ位置に表示され、「原文を表示」で切り替えられます。翻訳できる投稿があるタブを表示すると、モデルの準備を始めます。
+3. Xを開き直し、投稿本文の上にある「PLaMoで翻訳」を押します。同梱の0.8Bを使うので、設定画面でのダウンロードは不要です。訳文は生成された部分から本文と同じ位置に表示され、「原文を表示」で切り替えられます。翻訳できる投稿があるタブを表示すると、モデルの準備を始めます。
+
+2B（約1.81GB）を使う場合は、設定の「モデル管理を開く」からダウンロードするか、取得済みの2BのQ4_K_M形式のGGUFファイルを取り込みます。「翻訳に使うモデル」で2Bを選び、「保存」を押すと切り替わります。
+
+Gitから取得したソースで拡張機能を読み込む場合は、[PFN公式の0.8B GGUF](https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF/resolve/main/plamo-3-translate-0.8b-Q4_K_M.gguf)を `extension/models/plamo-3-translate-0.8b-Q4_K_M.gguf` に配置してください。配布用ZIPにはこのファイルを含めます。
 
 タイムラインと投稿詳細に表示される投稿本文やコミュニティノートが対象です。Xで自動翻訳済みの場合は、「PLaMoで翻訳」を押すとXの「原文を表示」で取得した本文を翻訳します。コミュニティノートでは、訳文と一緒に出典リンクを表示します。
 
@@ -15,4 +18,4 @@ ChromeでXの投稿本文をPLaMo 3 Translateの0.8Bまたは2Bモデルで翻�
 
 - 推論処理と同梱のWebAssemblyは、[ローカルAI翻訳UI](https://midorisawa.com/translate/)のWebGPU版とCPU版を流用しています。同梱のライセンスは `extension/runtime` にあります。
 - Xの投稿検出と本文抽出にはShirakawaの実装を参考にしています。
-- モデルの重みには[PLaMoコミュニティライセンス](https://plamo.preferredai.jp/info/plamo-community-license-ja)が適用されます。
+- Built with PLaMo · モデルの重みには同梱の[PLaMoコミュニティライセンス](extension/models/PLaMo-Community-License-ja.txt)が適用されます。

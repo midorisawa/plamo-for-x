@@ -45,6 +45,7 @@
       <p id="model-selection-status" role="status"></p>
       <a id="open-model-settings" href="options.html#model" target="_blank" rel="noopener">モデル管理を開く</a>
       <button id="show-model-manager" type="button" hidden>モデル管理を開く</button>
+      <p class="muted">Built with PLaMo · <a href="models/PLaMo-Community-License-ja.txt" target="_blank" rel="noopener">PLaMoコミュニティライセンス</a></p>
     </div>
   </section>
   </fieldset>
@@ -81,15 +82,14 @@
     <form method="dialog"><button class="close-button" aria-label="モデル管理を閉じる">×</button></form>
   </header>
   <h3>モデル一覧</h3>
-  <p class="muted">必要なモデルだけダウンロードできます。モデルはこのブラウザに保存されます。</p>
+  <p class="muted">0.8Bは同梱されています。2Bを使う場合はダウンロードするか、GGUFファイルを取り込んでください。</p>
   <div id="model-list"></div>
   <p id="model-feedback" role="status"></p>
   <div class="model-import">
-    <label class="field">保存済みのGGUFモデルを取り込む
+    <label class="field">保存済みの2BのGGUFファイルを取り込む
       <input id="import-model" type="file" accept=".gguf" disabled>
     </label>
   </div>
-  <p class="muted">モデルには<a href="https://plamo.preferredai.jp/info/plamo-community-license-ja" target="_blank" rel="noopener">PLaMoコミュニティライセンス</a>が適用されます。</p>
 </dialog>
 <template id="model-row">
   <div class="model-row">

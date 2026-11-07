@@ -39,14 +39,14 @@ function keepWorkerReady() {
 function prepare(mode, model, selectedModel) {
   preparing ??= (async () => {
     clearTimeout(idleTimer);
-    model ??= (await activeModel(selectedModel))?.file;
+    model ??= (await activeModel(selectedModel))?.source;
     if (!model) throw new Error("拡張機能の設定でモデルを読み込んでください。");
     if (mode !== "gpu" && mode !== "cpu") mode = await gpuAvailable() ? "gpu" : "cpu";
     if (worker && model.name === loadedModel.name && model.lastModified === loadedModel.lastModified &&
         model.size === loadedModel.size && mode === workerMode) return;
     resetWorker();
     worker = new Worker("./inference-worker.js", { type: "module" });
-    const result = await runWorker({ blob: model, mode });
+    const result = await runWorker({ model, mode });
     if (result.error) throw new Error(result.error);
     loadedModel = { name: model.name, lastModified: model.lastModified, size: model.size };
     workerMode = mode;
@@ -84,7 +84,7 @@ async function infer(message, respond) {
     respond({ error: "拡張機能の設定でモデルを読み込んでください。" });
     return;
   }
-  const { id: modelId, file: model } = active;
+  const { id: modelId, source: model } = active;
   const keyParts = [model.lastModified, model.size, target];
   if (modelId !== defaultModel) keyParts.unshift(modelId);
   const translationKey = source => JSON.stringify([1, ...keyParts, source]);
