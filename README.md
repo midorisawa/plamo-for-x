@@ -14,5 +14,5 @@ ChromeでXの投稿本文をPLaMo 3 Translateの0.8Bモデルで翻訳する拡�
 ## 参考実装とライセンス
 
 - 推論処理と同梱のWebAssemblyは、[ローカルAI翻訳UI](https://midorisawa.com/translate/)のWebGPU版とCPU版を流用しています。同梱のライセンスは `extension/runtime` にあります。
-- Xの投稿検出と本文抽出にはShirakawaの実装を参考にしています。ライセンスは `extension/shirakawa-license.txt` にあります。
+- Xの投稿検出と本文抽出にはShirakawaの実装を参考にしています。
 - モデルの重みには[PLaMoコミュニティライセンス](https://plamo.preferredai.jp/info/plamo-community-license-ja)が適用されます。
