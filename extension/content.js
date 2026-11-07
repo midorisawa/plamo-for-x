@@ -9,6 +9,7 @@ const pending = new Map();
 const autoQueue = new Set();
 let lastWarmup = -Infinity;
 let targetLanguage = "";
+let sourceLanguages = null;
 let autoTranslate = false;
 let activeTranslations = 0;
 let draining = false;
@@ -108,6 +109,12 @@ function switchNativeTranslation(root, post, translated) {
   });
 }
 
+function canTranslate(source, target) {
+  return Boolean(target) && source !== target &&
+    (sourceLanguages === null ||
+      (source === null ? sourceLanguages.length > 0 : sourceLanguages.includes(source || "und")));
+}
+
 function mount(root) {
   const target = targetLanguage;
   let post = readTarget(root);
@@ -115,14 +122,14 @@ function mount(root) {
   if (previous?.revealing) return;
   const known = originalLanguages.get(root);
   const source = post?.native?.translated
-    ? (known?.id === post.id && known?.text === post.text ? known.language : "")
+    ? (known?.id === post.id && known?.text === post.text ? known.language : null)
     : translationLanguage(post?.language);
-  if (post && target && source !== target && previous?.target === target &&
+  if (post && canTranslate(source, target) && previous?.target === target &&
       matches(previous.post, post) && previous.panel.isConnected) return;
   previous?.panel.remove();
   autoQueue.delete(previous);
   states.delete(root);
-  if (!post || !target || source === target) return;
+  if (!post || !canTranslate(source, target)) return;
 
   const panel = document.createElement("div");
   panel.className = "sns-translator";
@@ -217,7 +224,7 @@ function mount(root) {
       originalLanguages.set(root, { id: post.id, text: post.text, language });
       post = state.post = original;
       post.body.before(panel);
-      if (language === target || target !== targetLanguage) {
+      if (!canTranslate(language, target) || target !== targetLanguage) {
         if (original.native?.button) await switchNativeTranslation(root, original, true);
         state.revealing = false;
         mount(root);
@@ -323,15 +330,22 @@ function updateTargetLanguage(saved) {
   document.querySelectorAll(targetSelector).forEach(mount);
 }
 
-chrome.storage.local.get(["targetLanguage", "autoTranslate"])
+chrome.storage.local.get(["targetLanguage", "sourceLanguages", "autoTranslate"])
   .then(settings => {
+    sourceLanguages = Array.isArray(settings.sourceLanguages) ? settings.sourceLanguages : null;
     updateTargetLanguage(settings.targetLanguage);
     updateAutoTranslate(settings.autoTranslate);
   })
   .catch(() => updateTargetLanguage());
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.targetLanguage) updateTargetLanguage(changes.targetLanguage.newValue);
-  if (area === "local" && changes.autoTranslate) updateAutoTranslate(changes.autoTranslate.newValue);
+  if (area !== "local") return;
+  if (changes.sourceLanguages) {
+    const saved = changes.sourceLanguages.newValue;
+    sourceLanguages = Array.isArray(saved) ? saved : null;
+    document.querySelectorAll(targetSelector).forEach(mount);
+  }
+  if (changes.targetLanguage) updateTargetLanguage(changes.targetLanguage.newValue);
+  if (changes.autoTranslate) updateAutoTranslate(changes.autoTranslate.newValue);
 });
 document.addEventListener("visibilitychange", () => {
   if (document.querySelector(".sns-translator")) warmTranslation();

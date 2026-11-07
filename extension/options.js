@@ -36,6 +36,54 @@ try {
   languageStatus.textContent = "翻訳先の設定を読み込めませんでした。";
 }
 
+const sourceLanguagesField = document.querySelector("#source-languages");
+const allSourceLanguages = document.querySelector("#all-source-languages");
+const sourceLanguageChoices = document.querySelector("#source-language-choices");
+const sourceLanguageStatus = document.querySelector("#source-language-status");
+const sourceInputs = [...translationLanguages, "und"].map(code => {
+  const label = document.createElement("label");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.value = code;
+  label.append(checkbox, " ", code === "und" ? "言語を判定できない原文" : languageNames.of(code));
+  sourceLanguageChoices.append(label);
+  return checkbox;
+});
+
+function showSourceLanguages(saved) {
+  for (const checkbox of sourceInputs) checkbox.checked = saved?.includes(checkbox.value) ?? true;
+  const checkedCount = sourceInputs.filter(checkbox => checkbox.checked).length;
+  allSourceLanguages.checked = checkedCount === sourceInputs.length;
+  allSourceLanguages.indeterminate = checkedCount > 0 && !allSourceLanguages.checked;
+}
+
+try {
+  let { sourceLanguages } = await chrome.storage.local.get("sourceLanguages");
+  showSourceLanguages(sourceLanguages);
+  sourceLanguagesField.disabled = false;
+  sourceLanguagesField.addEventListener("change", async event => {
+    if (event.target === allSourceLanguages) {
+      for (const checkbox of sourceInputs) checkbox.checked = allSourceLanguages.checked;
+    }
+    const checked = sourceInputs.filter(checkbox => checkbox.checked).map(checkbox => checkbox.value);
+    const selected = checked.length === sourceInputs.length ? null : checked;
+    showSourceLanguages(selected);
+    sourceLanguagesField.disabled = true;
+    try {
+      await chrome.storage.local.set({ sourceLanguages: selected });
+      sourceLanguages = selected;
+      sourceLanguageStatus.textContent = "";
+    } catch {
+      showSourceLanguages(sourceLanguages);
+      sourceLanguageStatus.textContent = "原文の言語設定を保存できませんでした。";
+    } finally {
+      sourceLanguagesField.disabled = false;
+    }
+  });
+} catch {
+  sourceLanguageStatus.textContent = "原文の言語設定を読み込めませんでした。";
+}
+
 try {
   const { inferenceMode } = await chrome.storage.local.get("inferenceMode");
   let savedMode = inferenceMode === "gpu" || inferenceMode === "cpu" ? inferenceMode : "auto";

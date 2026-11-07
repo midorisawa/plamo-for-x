@@ -6,6 +6,18 @@
 <h1>SNS Translatorの設定</h1>
 <label>翻訳先の言語 <select id="target-language" disabled></select></label>
 <p id="language-status" role="status"></p>
+<details>
+  <summary>翻訳する原文の言語</summary>
+  <fieldset id="source-languages" disabled>
+    <legend>翻訳対象</legend>
+    <label><input id="all-source-languages" type="checkbox" checked> すべての言語を対象にする</label>
+    <div>
+      <p>翻訳する言語を選択してください。複数選べます。</p>
+      <div id="source-language-choices" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 4px;"></div>
+    </div>
+  </fieldset>
+  <p id="source-language-status" role="status"></p>
+</details>
 <label>翻訳の実行先
   <select id="inference-mode" disabled>
     <option value="auto">自動（GPU優先）</option>
