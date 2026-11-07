@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "SNS Translator",
+  "version": "0.1.0",
+  "description": "Xの投稿をPLaMo 3 Translateで翻訳する",
+  "minimum_chrome_version": "116",
+  "permissions": ["offscreen", "unlimitedStorage", "storage"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "icons": {
+    "16": "icons/local-translator-16.png",
+    "32": "icons/local-translator-32.png",
+    "48": "icons/local-translator-48.png",
+    "128": "icons/local-translator-128.png"
+  },
+  "action": {
+    "default_title": "PLaMoのモデル設定",
+    "default_icon": {
+      "16": "icons/local-translator-16.png",
+      "32": "icons/local-translator-32.png"
+    }
+  },
+  "options_page": "options.html",
+  "content_scripts": [{
+    "matches": ["https://x.com/*"],
+    "js": ["languages.js", "content.js"],
+    "css": ["content.css"],
+    "run_at": "document_idle"
+  }],
+  "web_accessible_resources": [{
+    "resources": ["icons/local-translator.svg"],
+    "matches": ["https://x.com/*"]
+  }],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self'"
+  }
+}

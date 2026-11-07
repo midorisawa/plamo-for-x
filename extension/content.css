@@ -1,0 +1,71 @@
+.sns-translator-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 4px;
+  margin-block: 2px;
+  color: #536471;
+  font: 400 13px/16px system-ui, sans-serif;
+}
+
+.sns-translator button {
+  color: #1d9bf0;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sns-translator-icon {
+  flex: none;
+  width: 19px;
+  height: 16px;
+  background-color: currentColor;
+  mask-position: center;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+}
+
+.sns-translator button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.sns-translator button:disabled {
+  cursor: wait;
+}
+
+.sns-translator [role="status"] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-testid="birdwatch-pivot"] > .sns-translator {
+  padding-inline: 12px;
+}
+
+.sns-translator:is([data-show-translation], [data-keep-grok]) + [data-testid="tweetText"],
+[data-testid="birdwatch-pivot"] > .sns-translator:is([data-show-translation], [data-keep-grok]) + div[dir],
+.sns-translator-native-row:has(+ .sns-translator:is([data-show-translation], [data-keep-grok])) {
+  display: none !important;
+}
+
+[data-testid="birdwatch-pivot"] .sns-translator-grok {
+  padding-inline: 0;
+}
+
+.sns-translator:not([data-show-translation]) .sns-translator-references {
+  display: none;
+}
+
+.sns-translator-references a {
+  display: block;
+  color: #1d9bf0;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-color-scheme: dark) {
+  .sns-translator-toolbar {
+    color: #71767b;
+  }
+}

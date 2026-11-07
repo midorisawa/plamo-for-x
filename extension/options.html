@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SNS Translatorの設定</title>
+<h1>SNS Translatorの設定</h1>
+<label>翻訳先の言語 <select id="target-language" disabled></select></label>
+<p id="language-status" role="status"></p>
+<p>Xの投稿を翻訳するには、PLaMo 3 Translateの0.8Bモデルを読み込んでください。</p>
+<p><a href="https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF/resolve/main/plamo-3-translate-0.8b-Q4_K_M.gguf">モデルをダウンロード（約573MB）</a></p>
+<label>ダウンロードしたGGUFファイル <input type="file" accept=".gguf" disabled></label>
+<p role="status" id="status">モデルを確認中…</p>
+<script src="languages.js"></script>
+<script type="module" src="options.js"></script>
+</html>
