@@ -66,7 +66,7 @@ async function translate(text, target, mode, model, onPartial) {
 }
 
 async function infer(message, respond) {
-  const { id, tabId, documentId, text, target, mode } = message;
+  const { id, tabId, documentId, text, target, mode, postId, preview } = message;
   function sendResult(result) {
     return chrome.runtime.sendMessage({ type: "inference-result", id, tabId, documentId, result }).catch(() => {});
   }
@@ -76,10 +76,27 @@ async function infer(message, respond) {
     respond({ error: "拡張機能の設定でモデルを読み込んでください。" });
     return;
   }
-  const key = JSON.stringify([1, model.lastModified, model.size, target, text]);
+  const keyParts = [model.lastModified, model.size, target];
+  const translationKey = source => JSON.stringify([1, ...keyParts, source]);
+  const previewKey = postId && JSON.stringify(["preview", ...keyParts, postId]);
+  const key = translationKey(text);
   const cached = await readTranslation(key).catch(() => undefined);
-  if (cached) {
+  const savedPreview = previewKey && !preview
+    ? await readTranslation(previewKey).catch(() => undefined)
+    : undefined;
+  const prefix = savedPreview && text.startsWith(savedPreview.source)
+    ? savedPreview.text + savedPreview.separator
+    : "";
+
+  async function rememberPreview(result) {
+    if (previewKey && preview && result.text && !result.truncated) {
+      await saveTranslation(previewKey, { ...preview, text: result.text }).catch(() => {});
+    }
+  }
+
+  if (cached && (!prefix || cached.text.startsWith(prefix))) {
     respond({ accepted: true });
+    await rememberPreview(cached);
     return sendResult(cached);
   }
   if (busy) {
@@ -90,8 +107,26 @@ async function infer(message, respond) {
   respond({ accepted: true });
   let result;
   try {
-    result = await translate(text, target, mode, model, sendResult);
+    if (prefix) {
+      await sendResult({ partial: prefix });
+      const suffix = text.slice(savedPreview.source.length).trim();
+      const suffixKey = translationKey(suffix);
+      if (suffix) {
+        const cachedSuffix = await readTranslation(suffixKey).catch(() => undefined);
+        result = cachedSuffix ?? await translate(suffix, target, mode, model,
+          ({ partial }) => sendResult({ partial: prefix + partial }));
+        if (result.text && !result.truncated && !cachedSuffix) {
+          await saveTranslation(suffixKey, result).catch(() => {});
+        }
+        if (result.text) result = { ...result, text: prefix + result.text };
+      } else {
+        result = { text: prefix.trimEnd() };
+      }
+    } else {
+      result = await translate(text, target, mode, model, sendResult);
+    }
     if (result.text && !result.truncated) await saveTranslation(key, result).catch(() => {});
+    await rememberPreview(result);
   } catch (error) {
     resetWorker();
     result = { error: error.message };

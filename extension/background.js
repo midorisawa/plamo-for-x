@@ -39,6 +39,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         id: message.id,
         text: message.text,
         target: message.target,
+        postId: message.postId,
+        preview: message.preview,
         mode,
         tabId: sender.tab.id,
         documentId: sender.documentId,

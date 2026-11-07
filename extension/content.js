@@ -18,7 +18,7 @@ let draining = false;
 let expandedPreview;
 let resumeExpansion;
 
-function requestTranslation(text, target, onPartial) {
+function requestTranslation(text, target, onPartial, postId, preview) {
   const id = crypto.randomUUID();
   return new Promise(resolve => {
     function finish(result) {
@@ -34,7 +34,7 @@ function requestTranslation(text, target, onPartial) {
     pending.set(id, finish);
     async function send() {
       try {
-        const response = await chrome.runtime.sendMessage({ type: "translate-post", id, text, target });
+        const response = await chrome.runtime.sendMessage({ type: "translate-post", id, text, target, postId, preview });
         if (pending.has(id) && !response?.accepted) {
           finish(response ?? { error: "翻訳を開始できませんでした。" });
         }
@@ -154,12 +154,14 @@ function mount(root) {
   let post = readTarget(root);
   const previous = states.get(root);
   if (previous?.revealing) return;
+  const isNote = root.matches(noteSelector);
+  const collapsed = !isNote && Boolean(root.querySelector(showMoreSelector));
   const known = originalLanguages.get(root);
   const source = post?.native?.translated
     ? (known?.id === post.id && known?.text === post.text ? known.language : null)
     : translationLanguage(post?.language);
   if (post && canTranslate(source, target) && previous?.target === target &&
-      matches(previous.post, post) && previous.panel.isConnected) return;
+      previous.collapsed === collapsed && matches(previous.post, post) && previous.panel.isConnected) return;
   previous?.panel.remove();
   autoQueue.delete(previous);
   states.delete(root);
@@ -182,8 +184,6 @@ function mount(root) {
   output.setAttribute("role", "status");
   output.lang = target;
   output.dir = "auto";
-  const isNote = root.matches(noteSelector);
-  const collapsed = !isNote && Boolean(root.querySelector(showMoreSelector));
   const references = document.createElement("div");
   references.className = "sns-translator-references";
   toolbar.append(icon, label, button);
@@ -192,12 +192,25 @@ function mount(root) {
     if (event.target.closest("a")) event.stopPropagation();
   });
   post.body.before(panel);
-  const state = { post, panel, target, translate: runTranslation };
+  const state = { post, panel, target, collapsed, label, output, references, translate: runTranslation };
   states.set(root, state);
   warmTranslation();
   button.addEventListener("pointerenter", warmTranslation);
   let translation = null;
   let links = [];
+  const expansion = !collapsed && !isNote && expandedPreview?.id === post.id && expandedPreview?.target === target
+    ? expandedPreview : undefined;
+  let keepingPreview = Boolean(expansion);
+  if (expansion) {
+    output.append(...expansion.output.cloneNode(true).childNodes);
+    output.style.cssText = expansion.output.style.cssText;
+    references.append(...expansion.references.cloneNode(true).childNodes);
+    label.textContent = expansion.label;
+    label.hidden = false;
+    button.textContent = "原文を表示";
+    output.setAttribute("aria-busy", "true");
+    panel.setAttribute("data-show-translation", "");
+  }
 
   function showTranslation(show) {
     label.hidden = !show;
@@ -214,7 +227,7 @@ function mount(root) {
   if (autoTranslate && nativeSelections.get(root) !== (post.id ?? null)) {
     autoQueue.add(state);
     drainAutoQueue();
-  } else if (!collapsed && !isNote && expandedPreview?.id === post.id && expandedPreview?.target === target) {
+  } else if (expansion) {
     if (activeTranslations) {
       resumeExpansion = () => {
         if (panel.isConnected) runTranslation(false);
@@ -248,7 +261,7 @@ function mount(root) {
     }
     state.attempted = true;
     button.disabled = true;
-    output.textContent = "";
+    if (!keepingPreview) output.textContent = "";
     if (post.native?.translated) {
       const grok = post.body.cloneNode(true);
       grok.removeAttribute("data-testid");
@@ -305,6 +318,10 @@ function mount(root) {
         button.disabled = false;
         return;
       }
+      if (keepingPreview) {
+        keepingPreview = false;
+        references.replaceChildren();
+      }
       if (!result.error && panel.hasAttribute("data-keep-grok")) {
         panel.querySelector(".sns-translator-grok")?.remove();
         panel.removeAttribute("data-keep-grok");
@@ -336,7 +353,7 @@ function mount(root) {
     try {
       const input = translationInput(post.body, isNote);
       links = input.links;
-      references.replaceChildren();
+      if (!keepingPreview) references.replaceChildren();
       if (links.length && !input.hasProse) {
         finish({ text: input.text });
         return;
@@ -344,25 +361,21 @@ function mount(root) {
 
       let text = input.text;
       let prefix = "";
-      const preview = !collapsed && expandedPreview?.id === post.id && expandedPreview?.target === target
-        ? expandedPreview : null;
-      if (preview && text.startsWith(preview.source)) {
-        prefix = preview.translation + preview.separator;
-        text = text.slice(preview.source.length).trim();
-      } else if (collapsed) {
+      if (collapsed) {
         const segmenter = new Intl.Segmenter(translationLanguage(post.language) || undefined, { granularity: "sentence" });
         const sentences = [...segmenter.segment(text)];
         // 句点を省いて改行で区切る投稿では、最後の行から訳し直す
         const boundary = Math.max(sentences.at(-1)?.index ?? 0, text.lastIndexOf("\n") + 1);
         if (boundary) {
           const source = text.slice(0, boundary);
-          const first = await requestTranslation(source.trimEnd(), target, partial => finish({ partial }));
+          const separator = /\n\s*$/.test(source) ? "\n" : /^(ja|zh-)/.test(target) ? "" : " ";
+          const first = await requestTranslation(
+            source.trimEnd(), target, partial => finish({ partial }), post.id, { source, separator },
+          );
           if (!first.text || first.truncated) {
             finish(automatic && first.busy ? { retry: true } : first);
             return automatic && first.busy;
           }
-          const separator = /\n\s*$/.test(source) ? "\n" : /^(ja|zh-)/.test(target) ? "" : " ";
-          state.preview = { id: post.id, target, source, translation: first.text, separator };
           prefix = first.text + separator;
           text = text.slice(boundary).trim();
           if (!panel.isConnected || !matches(post, readTarget(root))) return;
@@ -370,14 +383,15 @@ function mount(root) {
       }
       if (prefix) finish({ partial: prefix });
       const result = text
-        ? await requestTranslation(text, target, partial => finish({ partial: prefix + partial }))
+        ? await requestTranslation(text, target, partial => finish({ partial: prefix + partial }),
+          !collapsed && !isNote ? post.id : undefined)
         : { text: prefix.trimEnd() };
       if (automatic && result.busy) {
         finish({ retry: true });
         return true;
       }
       if (text && result.text) result.text = prefix + result.text;
-      if (preview && result.text && expandedPreview === preview) expandedPreview = undefined;
+      if (!collapsed && result.text && expandedPreview?.id === post.id) expandedPreview = undefined;
       finish(result);
     } catch {
       finish({ error: "拡張機能に接続できませんでした。ページを再読み込みしてください。" });
@@ -391,7 +405,13 @@ document.addEventListener("click", event => {
   const showMore = event.target.closest(showMoreSelector);
   if (showMore) {
     const state = states.get(showMore.closest(postSelector));
-    expandedPreview = state?.preview?.id ? state.preview : undefined;
+    expandedPreview = state?.post.id && state.panel.hasAttribute("data-show-translation") ? {
+      id: state.post.id,
+      target: state.target,
+      output: state.output.cloneNode(true),
+      references: state.references.cloneNode(true),
+      label: state.label.textContent,
+    } : undefined;
     return;
   }
   const button = event.target.closest("button");
