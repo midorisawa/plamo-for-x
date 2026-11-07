@@ -4,35 +4,55 @@ function setupGlossarySelection() {
   const fields = document.querySelector("#glossary-selection");
   const choices = document.querySelector("#glossary-selection-choices");
   const status = document.querySelector("#glossary-selection-status");
+  let pending = 0;
+  let selectionRefresh = 0;
 
   async function refresh() {
+    const refreshId = ++selectionRefresh;
     try {
       const { glossaries = [], selectedGlossaryIds = [] } =
         await chrome.storage.local.get(["glossaries", "selectedGlossaryIds"]);
-      const draft = new Map([...choices.querySelectorAll("input")]
-        .filter(input => input.checked !== input.defaultChecked).map(input => [input.value, input.checked]));
+      if (refreshId !== selectionRefresh || pending) return;
+      const active = document.activeElement;
+      const focusedId = choices.contains(active) ? active.value : undefined;
       choices.replaceChildren();
+      let focusTarget;
       for (const { id, name, entries } of glossaries) {
         const label = document.createElement("label");
         label.className = "check";
         const input = document.createElement("input");
         input.type = "checkbox";
         input.value = id;
-        input.defaultChecked = selectedGlossaryIds.includes(id);
-        input.checked = draft.get(id) ?? input.defaultChecked;
+        input.checked = selectedGlossaryIds.includes(id);
+        if (id === focusedId) focusTarget = input;
         label.append(input, `${name}（${entries.length}組）`);
         choices.append(label);
       }
       if (!glossaries.length) choices.textContent = "登録済みの用語集はありません。";
       fields.disabled = !glossaries.length;
-      status.textContent = "";
+      focusTarget?.focus();
     } catch {
+      if (refreshId !== selectionRefresh || pending) return;
+      fields.disabled = true;
       status.textContent = "用語集を読み込めませんでした。";
     }
   }
 
+  choices.addEventListener("change", async ({ target }) => {
+    if (!pending) status.textContent = "";
+    pending++;
+    const checked = target.checked;
+    try {
+      const result = await chrome.runtime.sendMessage({ type: "set-glossary-selection", id: target.value, checked });
+      if (result.error) throw new Error(result.error);
+    } catch (error) {
+      status.textContent = `用語集の選択を反映できませんでした。${error.message}`;
+    } finally {
+      if (--pending === 0) await refresh();
+    }
+  });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && (changes.glossaries || changes.selectedGlossaryIds)) refresh();
+    if (!pending && area === "local" && (changes.glossaries || changes.selectedGlossaryIds)) refresh();
   });
   refresh();
 }

@@ -8,6 +8,7 @@ export function setupModelSettings() {
   const list = document.querySelector("#model-list");
   const template = document.querySelector("#model-row");
   let busy = false;
+  let modelRefresh = 0;
 
   const rows = models.flatMap(({ id, label, size, bundled }) => {
     const row = template.content.firstElementChild.cloneNode(true);
@@ -75,14 +76,15 @@ export function setupModelSettings() {
   }
 
   async function refresh() {
+    const refreshId = ++modelRefresh;
     try {
       const available = new Map(await Promise.all(models.map(async ({ id }) => [id, await modelSource(id)])));
       const active = await readActiveModel(available);
-      const draft = select.selectedOptions[0]?.defaultSelected ? "" : select.value;
+      if (refreshId !== modelRefresh || busy) return;
       const options = models.filter(({ id }) => available.get(id))
-        .map(({ id, label }) => new Option(`PLaMo 3 Translate ${label}`, id, id === active?.id));
+        .map(({ id, label }) => new Option(`PLaMo 3 Translate ${label}`, id));
       select.replaceChildren(...(options.length ? options : [new Option("モデル未登録", "")]));
-      select.value = available.get(draft) ? draft : active?.id ?? "";
+      select.value = active?.id ?? "";
       select.disabled = busy || !active;
       input.disabled = busy;
       for (const { id, size, status, download, remove } of rows) {
@@ -93,6 +95,7 @@ export function setupModelSettings() {
         download.disabled = remove.disabled = busy;
       }
     } catch {
+      if (refreshId !== modelRefresh || busy) return;
       disableControls();
       selectionStatus.textContent = "モデルの保存先を確認できませんでした。";
     }
@@ -123,6 +126,16 @@ export function setupModelSettings() {
     }, feedback, success, signal);
   }
 
+  select.addEventListener("change", () => {
+    const selectedModel = select.value;
+    run(async () => {
+      if (!await modelSource(selectedModel)) throw new Error("選択したモデルは削除されました。");
+      await chrome.storage.local.set({ selectedModel });
+    }, selectionStatus);
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (!busy && area === "local" && changes.selectedModel) refresh();
+  });
   input.addEventListener("change", async () => {
     const file = input.files[0];
     if (!file) return;

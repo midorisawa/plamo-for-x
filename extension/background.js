@@ -1,4 +1,4 @@
-import { glossaryTerms } from "./glossary.js";
+import { glossaryTerms, withGlossaryLock } from "./glossary.js";
 
 const offscreenPage = "offscreen.html";
 let creating;
@@ -92,6 +92,18 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         await chrome.storage.local.get(["glossaries", "selectedGlossaryIds"]);
       return { terms: glossaryTerms(glossaries, selectedGlossaryIds) };
     })().then(respond, error => respond({ error: error.message }));
+    return true;
+  }
+  if (message.type === "set-glossary-selection" && sender.url?.split("#")[0] === chrome.runtime.getURL("options.html")) {
+    withGlossaryLock(async () => {
+      const { glossaries = [], selectedGlossaryIds = [] } =
+        await chrome.storage.local.get(["glossaries", "selectedGlossaryIds"]);
+      if (!glossaries.some(({ id }) => id === message.id)) throw new Error("用語集は削除されました。");
+      const next = glossaries.filter(({ id }) => id === message.id ? message.checked : selectedGlossaryIds.includes(id))
+        .map(({ id }) => id);
+      glossaryTerms(glossaries, next);
+      await chrome.storage.local.set({ selectedGlossaryIds: next });
+    }).then(() => respond({}), error => respond({ error: error.message }));
     return true;
   }
   if (message.type === "get-gpu-support") {

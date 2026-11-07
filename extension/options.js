@@ -1,7 +1,5 @@
-import { modelSource, withModelLock } from "./model.js";
 import { setupModelSettings } from "./model-settings.js";
 import { setupGlossarySettings } from "./glossary-settings.js";
-import { glossaryTerms, withGlossaryLock } from "./glossary.js";
 import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translation-cache.js";
 
 const popup = chrome.extension.getViews({ type: "popup" }).includes(window);
@@ -13,6 +11,7 @@ if (!popup) {
 setupGlossarySettings(popup);
 const enabledSwitch = document.querySelector("#enabled");
 const enabledLabel = document.querySelector("#enabled-label");
+if (popup) document.querySelector(".app-header").append(enabledSwitch.closest("label"));
 let translationEnabled = true;
 
 function showEnabled(value) {
@@ -41,12 +40,8 @@ enabledSwitch.addEventListener("change", async () => {
 });
 
 const languageSelect = document.querySelector("#target-language");
-const settingsForm = document.querySelector("#translation-settings");
 const settingsFields = document.querySelector("#translation-fields");
-const saveButton = document.querySelector("#save-settings");
-const saveStatus = document.querySelector("#save-status");
-const modelSelect = document.querySelector("#selected-model");
-const glossaryChoices = document.querySelector("#glossary-selection-choices");
+const settingsStatus = document.querySelector("#settings-status");
 const autoTranslate = document.querySelector("#auto-translate");
 const inferenceSelect = document.querySelector("#inference-mode");
 const browserLanguage = preferredTranslationLanguage();
@@ -103,52 +98,36 @@ function updateSourceSummary() {
   allSourceLanguages.indeterminate = checkedCount > 0 && !allSourceLanguages.checked;
 }
 
-function readSettings() {
-  return {
-    targetLanguage: languageSelect.value,
-    sourceLanguages: readSourceLanguages(),
-    inferenceMode: inferenceSelect.value,
-    autoTranslate: autoTranslate.checked,
-  };
-}
-
-languageSelect.addEventListener("change", updateSourceChoices);
+languageSelect.addEventListener("change", () => {
+  updateSourceChoices();
+  applySetting("targetLanguage", languageSelect.value);
+});
 sourceLanguagesField.addEventListener("change", event => {
   if (event.target === allSourceLanguages) {
     for (const checkbox of visibleSourceInputs()) checkbox.checked = allSourceLanguages.checked;
   }
   updateSourceSummary();
+  applySetting("sourceLanguages", readSourceLanguages());
 });
+inferenceSelect.addEventListener("change", () => applySetting("inferenceMode", inferenceSelect.value));
+autoTranslate.addEventListener("change", () => applySetting("autoTranslate", autoTranslate.checked));
 
-let savedSettings;
+const settingsKeys = ["targetLanguage", "sourceLanguages", "inferenceMode", "autoTranslate"];
 let settingsRefresh = 0;
-const sameSetting = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+let gpuSupport;
 
 async function refreshSettings() {
   const refresh = ++settingsRefresh;
   const { targetLanguage, sourceLanguages, inferenceMode, autoTranslate: automatic } =
-    await chrome.storage.local.get(["targetLanguage", "sourceLanguages", "inferenceMode", "autoTranslate"]);
+    await chrome.storage.local.get(settingsKeys);
   const explicitMode = inferenceMode === "gpu" || inferenceMode === "cpu";
   const gpu = (!explicitMode || typeof automatic !== "boolean") &&
-    await chrome.runtime.sendMessage({ type: "get-gpu-support" }).catch(() => false) === true;
+    await (gpuSupport ??= chrome.runtime.sendMessage({ type: "get-gpu-support" }).catch(() => false)) === true;
   if (refresh !== settingsRefresh) return;
-  const selectedSources = sourceInputs.map(input => input.value)
-    .filter(code => sourceLanguages?.includes(code) ?? true);
-  const next = {
-    targetLanguage: translationLanguage(targetLanguage),
-    sourceLanguages: selectedSources.length === sourceInputs.length ? null : selectedSources,
-    inferenceMode: explicitMode ? inferenceMode : gpu ? "gpu" : "cpu",
-    autoTranslate: typeof automatic === "boolean" ? automatic : gpu,
-  };
-  const draft = savedSettings && readSettings();
-  const unchanged = key => !draft || sameSetting(draft[key], savedSettings[key]);
-  if (unchanged("targetLanguage")) languageSelect.value = next.targetLanguage;
-  if (unchanged("sourceLanguages")) {
-    for (const checkbox of sourceInputs) checkbox.checked = selectedSources.includes(checkbox.value);
-  }
-  if (unchanged("inferenceMode")) inferenceSelect.value = next.inferenceMode;
-  if (unchanged("autoTranslate")) autoTranslate.checked = next.autoTranslate;
-  savedSettings = next;
+  languageSelect.value = translationLanguage(targetLanguage);
+  for (const checkbox of sourceInputs) checkbox.checked = sourceLanguages?.includes(checkbox.value) ?? true;
+  inferenceSelect.value = explicitMode ? inferenceMode : gpu ? "gpu" : "cpu";
+  autoTranslate.checked = typeof automatic === "boolean" ? automatic : gpu;
   updateSourceChoices();
 }
 
@@ -156,84 +135,26 @@ try {
   await refreshSettings();
   for (const control of [languageSelect, sourceLanguagesField, inferenceSelect, autoTranslate]) control.disabled = false;
   settingsFields.disabled = false;
-  saveButton.disabled = false;
-  saveStatus.textContent = "";
+  settingsStatus.textContent = "";
 } catch {
-  saveStatus.textContent = "設定を読み込めませんでした。";
+  settingsStatus.textContent = "設定を読み込めませんでした。";
 }
 
-function readChanges(draft) {
-  const changes = Object.fromEntries(Object.entries(draft).filter(([key, value]) =>
-    !sameSetting(value, savedSettings[key])));
-  const model = modelSelect.selectedOptions[0];
-  if (model?.value && !model.defaultSelected) changes.selectedModel = model.value;
-  const choices = [...glossaryChoices.querySelectorAll("input")];
-  if (choices.some(input => input.checked !== input.defaultChecked)) {
-    changes.selectedGlossaryIds = choices.filter(input => input.checked).map(input => input.value);
-  }
-  return changes;
-}
-
-function showUnsavedChanges() {
-  saveStatus.textContent = Object.keys(readChanges(readSettings())).length ? "未保存の変更があります。" : "";
-}
-
-settingsForm.addEventListener("change", showUnsavedChanges);
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !savedSettings || !Object.keys(savedSettings).some(key => key in changes)) return;
-  refreshSettings().then(() => {
-    if (!saveButton.disabled) showUnsavedChanges();
-  }).catch(() => {});
+  if (area === "local" && settingsKeys.some(key => key in changes)) {
+    refreshSettings().catch(() => {});
+  }
 });
 
-async function saveChanges(changes) {
-  if (changes.selectedGlossaryIds) {
-    const { glossaries = [] } = await chrome.storage.local.get("glossaries");
-    changes.selectedGlossaryIds = glossaries.filter(({ id }) => changes.selectedGlossaryIds.includes(id)).map(({ id }) => id);
-    glossaryTerms(glossaries, changes.selectedGlossaryIds);
-  }
-  if (changes.selectedModel) {
-    await withModelLock(async () => {
-      if (!await modelSource(changes.selectedModel)) throw new Error("選択したモデルは削除されました。");
-      await chrome.storage.local.set(changes);
-    });
-  } else if (Object.keys(changes).length) {
-    await chrome.storage.local.set(changes);
+async function applySetting(key, value) {
+  settingsStatus.textContent = "";
+  try {
+    await chrome.storage.local.set({ [key]: value });
+  } catch {
+    settingsStatus.textContent = "設定を反映できませんでした。";
+    await refreshSettings().catch(() => {});
   }
 }
-
-settingsForm.addEventListener("submit", async event => {
-  event.preventDefault();
-  if (saveButton.disabled) return;
-  const draft = readSettings();
-  const changes = readChanges(draft);
-  settingsFields.disabled = true;
-  saveButton.disabled = true;
-  saveStatus.textContent = "保存中…";
-  try {
-    if (changes.selectedGlossaryIds) await withGlossaryLock(() => saveChanges(changes));
-    else await saveChanges(changes);
-    if (changes.selectedModel) {
-      for (const option of modelSelect.options) option.defaultSelected = option.value === changes.selectedModel;
-      modelSelect.value = changes.selectedModel;
-    }
-    if (changes.selectedGlossaryIds) {
-      for (const input of glossaryChoices.querySelectorAll("input")) {
-        input.defaultChecked = input.checked = changes.selectedGlossaryIds.includes(input.value);
-      }
-    }
-    for (const key of Object.keys(draft)) {
-      if (Object.hasOwn(changes, key)) savedSettings[key] = draft[key];
-    }
-    await refreshSettings().catch(() => {});
-    saveStatus.textContent = "設定を保存しました。";
-  } catch (error) {
-    saveStatus.textContent = `設定を保存できませんでした。 ${error.message}`;
-  } finally {
-    settingsFields.disabled = false;
-    saveButton.disabled = false;
-  }
-});
 
 const mebibyte = 1024 * 1024;
 const cacheSettings = document.querySelector("#cache-settings");
@@ -243,9 +164,17 @@ const cacheMeter = document.querySelector("#cache-meter");
 const cacheUsage = document.querySelector("#cache-usage");
 const cacheStatus = document.querySelector("#cache-status");
 const cacheNumber = new Intl.NumberFormat("ja", { maximumFractionDigits: 2 });
+const invalidCacheLimitMessage = "キャッシュの上限をMiB単位の正の整数で入力してください。";
+const cacheLimitUpdates = popup ? null : new BroadcastChannel("sns-translator-cache-limit");
+let requestedLimit;
+let editingCacheLimit = false;
+let pendingCacheLimits = 0;
+let cacheInputRevision = 0;
 
-async function updateCacheSettings(action, success, failure, syncLimit = true) {
-  cacheFields.disabled = true;
+async function updateCacheSettings(action, success, failure) {
+  const inputRevision = cacheInputRevision;
+  const canUpdateStatus = () => inputRevision === cacheInputRevision &&
+    cacheStatus.textContent !== invalidCacheLimitMessage;
   try {
     await action?.();
     const { bytes, limit } = await readCacheUsage();
@@ -254,19 +183,53 @@ async function updateCacheSettings(action, success, failure, syncLimit = true) {
     const used = bytes > 0 && bytes / mebibyte < 0.01
       ? "0.01MiB未満" : `${cacheNumber.format(bytes / mebibyte)}MiB`;
     cacheUsage.textContent = `${used} / ${cacheNumber.format(limit / mebibyte)}MiB`;
-    if (syncLimit) cacheLimitInput.value = limit / mebibyte;
-    cacheStatus.textContent = success;
-  } catch {
-    cacheStatus.textContent = failure;
-  } finally {
+    if (!pendingCacheLimits) {
+      requestedLimit = limit;
+      if (!editingCacheLimit) cacheLimitInput.value = limit / mebibyte;
+    }
     cacheFields.disabled = false;
+    if (success !== null && canUpdateStatus()) cacheStatus.textContent = success;
+  } catch {
+    if (canUpdateStatus()) cacheStatus.textContent = failure;
   }
 }
 
+function applyCacheLimit() {
+  if (cacheFields.disabled) return;
+  const limit = cacheLimitInput.valueAsNumber * mebibyte;
+  if (!cacheLimitInput.validity.valid || !Number.isSafeInteger(limit)) {
+    cacheStatus.textContent = invalidCacheLimitMessage;
+    return;
+  }
+  editingCacheLimit = false;
+  if (cacheStatus.textContent === invalidCacheLimitMessage) cacheStatus.textContent = "";
+  if (limit === requestedLimit) return;
+  requestedLimit = limit;
+  pendingCacheLimits++;
+  updateCacheSettings(async () => {
+    try {
+      await setCacheLimit(limit);
+      cacheLimitUpdates.postMessage("changed");
+    } catch (error) {
+      if (requestedLimit === limit) {
+        requestedLimit = undefined;
+        editingCacheLimit = true;
+      }
+      throw error;
+    } finally {
+      pendingCacheLimits--;
+    }
+  }, "キャッシュの上限を変更しました。", "キャッシュの上限を変更できませんでした。");
+}
+
+cacheLimitInput.addEventListener("input", () => {
+  editingCacheLimit = true;
+  cacheInputRevision++;
+});
+cacheLimitInput.addEventListener("blur", applyCacheLimit);
 cacheSettings.addEventListener("submit", event => {
   event.preventDefault();
-  const limit = cacheLimitInput.valueAsNumber * mebibyte;
-  updateCacheSettings(() => setCacheLimit(limit), "キャッシュの上限を保存しました。", "キャッシュの上限を保存できませんでした。");
+  applyCacheLimit();
 });
 const clearCacheDialog = document.querySelector("#clear-cache-dialog");
 document.querySelector("#clear-cache").addEventListener("click", () => {
@@ -278,9 +241,14 @@ clearCacheDialog.addEventListener("close", () => {
     updateCacheSettings(clearTranslationCache, "キャッシュを削除しました。", "キャッシュを削除できませんでした。");
   }
 });
+function refreshCacheUsage() {
+  updateCacheSettings(null, null, "キャッシュの使用量を読み込めませんでした。");
+}
+
+cacheLimitUpdates?.addEventListener("message", refreshCacheUsage);
 document.addEventListener("visibilitychange", () => {
-  if (!popup && !document.hidden && !cacheFields.disabled) {
-    updateCacheSettings(null, cacheStatus.textContent, "キャッシュの使用量を読み込めませんでした。", false);
+  if (!popup && !document.hidden) {
+    refreshCacheUsage();
   }
 });
 if (!popup) updateCacheSettings(null, "", "キャッシュの使用量を読み込めませんでした。");

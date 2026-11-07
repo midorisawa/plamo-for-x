@@ -9,7 +9,6 @@
   --accent: #333;
   --accent-soft: #ebebeb;
   --primary: #333;
-  --primary-hover: #1a1a1a;
   --on-primary: #fff;
   --danger: #a22539;
   background: var(--canvas);
@@ -29,7 +28,6 @@
     --accent: #e0e0e0;
     --accent-soft: #333;
     --primary: #e5e5e5;
-    --primary-hover: #fff;
     --on-primary: #171717;
     --danger: #ffacb7;
   }
@@ -121,9 +119,6 @@ button:disabled, select:disabled, input:disabled { opacity: .6; cursor: default;
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 a { color: var(--accent); text-underline-offset: .18em; }
 .button-link { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none; font-weight: 650; }
-.primary, .primary:not(:disabled):hover { border-color: transparent; color: var(--on-primary); font-weight: 650; }
-.primary { background: var(--primary); }
-.primary:not(:disabled):hover { background: var(--primary-hover); }
 .danger { color: var(--danger); }
 
 .check { display: flex; align-items: start; gap: .55rem; padding: .3rem 0; }
@@ -138,8 +133,7 @@ input[type="checkbox"] { flex: none; width: 1.1rem; height: 1.1rem; margin: .17r
   cursor: pointer;
 }
 
-.extension-toggle, .popup .extension-toggle { margin: 0; padding: 0; border: 0; }
-.popup .panel:has(.extension-toggle) { border-bottom: 1px solid var(--border); }
+.extension-toggle { margin: 0; padding: 0; }
 
 .toggle-row input {
   appearance: none;
@@ -205,23 +199,9 @@ details > :not(summary) { margin: .6rem .8rem; }
 .cache-usage { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem .75rem; margin-bottom: .9rem; }
 meter { width: 100%; }
 #cache-limit { width: 7rem; }
+#cache-status { min-block-size: 2lh; margin-top: .4rem; }
 
-.save-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .65rem;
-  padding: .7rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 12px 12px 0 0;
-  background: var(--surface);
-}
-
-.save-bar p { margin: 0; overflow-wrap: anywhere; }
-.save-bar button { flex: none; }
+#settings-status { margin: 0; overflow-wrap: anywhere; }
 
 dialog {
   width: min(27rem, calc(100% - 2rem));
@@ -238,13 +218,20 @@ dialog .actions { justify-content: end; margin-top: 1rem; }
 .popup { width: 360px; background: var(--surface); }
 .popup body { max-height: 560px; overflow: auto; scroll-padding-bottom: 5rem; }
 .popup .app-header { padding: .75rem 1rem; gap: .5rem; }
-.popup .button-link { min-height: 36px; font-size: .85rem; }
 .popup .layout { display: block; padding: 0; }
 .popup .panel { margin: 0; padding: .75rem 1rem; border: 0; border-radius: 0; }
 .popup #translation { padding-bottom: 0; }
 .popup #translation-title { font-size: 1rem; }
 .popup .toggle-row:not(.extension-toggle) { border-top: 1px solid var(--border); }
-.popup .save-bar { border-width: 1px 0 0; border-radius: 0; }
+.popup .settings-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding: .7rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.popup #settings-status:not(:empty) { margin-bottom: .5rem; }
 
 @media (max-width: 720px) {
   :root:not(.popup) .layout { grid-template-columns: minmax(0, 1fr); gap: .85rem; padding-top: .8rem; }
