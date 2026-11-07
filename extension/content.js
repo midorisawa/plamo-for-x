@@ -5,6 +5,7 @@ const targetSelector = `${postSelector}, ${noteSelector}`;
 const iconUrl = chrome.runtime.getURL("icons/local-translator.svg");
 const states = new WeakMap();
 const originalLanguages = new WeakMap();
+const nativeSelections = new WeakMap();
 const pending = new Map();
 const autoQueue = new Set();
 let lastWarmup = -Infinity;
@@ -38,7 +39,9 @@ function updateAutoTranslate(enabled) {
   if (!autoTranslate) return;
   for (const root of document.querySelectorAll(targetSelector)) {
     const state = states.get(root);
-    if (state && !state.attempted) autoQueue.add(state);
+    if (state && !state.attempted && nativeSelections.get(root) !== (state.post.id ?? null)) {
+      autoQueue.add(state);
+    }
   }
   drainAutoQueue();
 }
@@ -176,7 +179,7 @@ function mount(root) {
     event.stopPropagation();
     runTranslation(false);
   });
-  if (autoTranslate) {
+  if (autoTranslate && nativeSelections.get(root) !== (post.id ?? null)) {
     autoQueue.add(state);
     drainAutoQueue();
   }
@@ -318,6 +321,19 @@ function mount(root) {
     return completed;
   }
 }
+
+document.addEventListener("click", event => {
+  // 原文の取得に使う拡張機能自身のクリックと、利用者による操作を区別する
+  if (!event.isTrusted) return;
+  const button = event.target.closest("button");
+  const root = button?.closest(targetSelector);
+  const state = root && states.get(root);
+  if (!state) return;
+  const post = readTarget(root);
+  if (post?.native?.button !== button) return;
+  nativeSelections.set(root, post.id ?? null);
+  autoQueue.delete(state);
+}, true);
 
 chrome.runtime.onMessage.addListener(message => {
   if (message.type === "translation-result") pending.get(message.id)?.(message.result);
