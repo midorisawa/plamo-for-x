@@ -1,11 +1,16 @@
+import { savedModel, withModelLock } from "./model.js";
 import { setupModelSettings } from "./model-settings.js";
 import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translation-cache.js";
 
 setupModelSettings(chrome.extension.getViews({ type: "popup" }).includes(window));
 const languageSelect = document.querySelector("#target-language");
-const languageStatus = document.querySelector("#language-status");
+const settingsForm = document.querySelector("#translation-settings");
+const settingsFields = document.querySelector("#translation-fields");
+const saveButton = document.querySelector("#save-settings");
+const saveStatus = document.querySelector("#save-status");
+const modelSelect = document.querySelector("#selected-model");
+const autoTranslate = document.querySelector("#auto-translate");
 const inferenceSelect = document.querySelector("#inference-mode");
-const inferenceStatus = document.querySelector("#inference-status");
 const browserLanguage = preferredTranslationLanguage();
 const languageNames = new Intl.DisplayNames(["ja"], { type: "language" });
 languageSelect.add(new Option(
@@ -17,29 +22,9 @@ for (const code of translationLanguages) {
   languageSelect.add(new Option(names.of(code), code));
 }
 
-try {
-  const { targetLanguage } = await chrome.storage.local.get("targetLanguage");
-  languageSelect.value = translationLanguage(targetLanguage);
-  languageSelect.disabled = false;
-  languageSelect.addEventListener("change", async () => {
-    languageSelect.disabled = true;
-    try {
-      await chrome.storage.local.set({ targetLanguage: languageSelect.value });
-      languageStatus.textContent = "";
-    } catch {
-      languageStatus.textContent = "翻訳先を保存できませんでした。";
-    } finally {
-      languageSelect.disabled = false;
-    }
-  });
-} catch {
-  languageStatus.textContent = "翻訳先の設定を読み込めませんでした。";
-}
-
 const sourceLanguagesField = document.querySelector("#source-languages");
 const allSourceLanguages = document.querySelector("#all-source-languages");
 const sourceLanguageChoices = document.querySelector("#source-language-choices");
-const sourceLanguageStatus = document.querySelector("#source-language-status");
 const sourceInputs = [...translationLanguages, "und"].map(code => {
   const label = document.createElement("label");
   label.className = "check";
@@ -51,84 +36,90 @@ const sourceInputs = [...translationLanguages, "und"].map(code => {
   return checkbox;
 });
 
-function showSourceLanguages(saved) {
-  for (const checkbox of sourceInputs) checkbox.checked = saved?.includes(checkbox.value) ?? true;
-  const checkedCount = sourceInputs.filter(checkbox => checkbox.checked).length;
-  allSourceLanguages.checked = checkedCount === sourceInputs.length;
-  allSourceLanguages.indeterminate = checkedCount > 0 && !allSourceLanguages.checked;
+function readSourceLanguages() {
+  const checked = sourceInputs.filter(checkbox => checkbox.checked).map(checkbox => checkbox.value);
+  return checked.length === sourceInputs.length ? null : checked;
 }
 
-try {
-  let { sourceLanguages } = await chrome.storage.local.get("sourceLanguages");
-  showSourceLanguages(sourceLanguages);
-  sourceLanguagesField.disabled = false;
-  sourceLanguagesField.addEventListener("change", async event => {
-    if (event.target === allSourceLanguages) {
-      for (const checkbox of sourceInputs) checkbox.checked = allSourceLanguages.checked;
-    }
-    const checked = sourceInputs.filter(checkbox => checkbox.checked).map(checkbox => checkbox.value);
-    const selected = checked.length === sourceInputs.length ? null : checked;
-    showSourceLanguages(selected);
-    sourceLanguagesField.disabled = true;
-    try {
-      await chrome.storage.local.set({ sourceLanguages: selected });
-      sourceLanguages = selected;
-      sourceLanguageStatus.textContent = "";
-    } catch {
-      showSourceLanguages(sourceLanguages);
-      sourceLanguageStatus.textContent = "原文の言語設定を保存できませんでした。";
-    } finally {
-      sourceLanguagesField.disabled = false;
-    }
-  });
-} catch {
-  sourceLanguageStatus.textContent = "原文の言語設定を読み込めませんでした。";
+function updateSourceSummary() {
+  const checked = readSourceLanguages();
+  allSourceLanguages.checked = checked === null;
+  allSourceLanguages.indeterminate = Boolean(checked?.length);
 }
 
-try {
-  const { inferenceMode } = await chrome.storage.local.get("inferenceMode");
-  let savedMode = inferenceMode === "gpu" || inferenceMode === "cpu" ? inferenceMode : "auto";
-  inferenceSelect.value = savedMode;
-  inferenceSelect.disabled = false;
-  inferenceSelect.addEventListener("change", async () => {
-    inferenceSelect.disabled = true;
-    try {
-      await chrome.storage.local.set({ inferenceMode: inferenceSelect.value });
-      savedMode = inferenceSelect.value;
-      inferenceStatus.textContent = "";
-    } catch {
-      inferenceSelect.value = savedMode;
-      inferenceStatus.textContent = "翻訳の実行先を保存できませんでした。";
-    } finally {
-      inferenceSelect.disabled = false;
-    }
-  });
-} catch {
-  inferenceStatus.textContent = "翻訳の実行先を読み込めませんでした。";
+function readSettings() {
+  return {
+    targetLanguage: languageSelect.value,
+    sourceLanguages: readSourceLanguages(),
+    inferenceMode: inferenceSelect.value,
+    autoTranslate: autoTranslate.checked,
+  };
 }
 
-const autoTranslate = document.querySelector("#auto-translate");
-const autoTranslateStatus = document.querySelector("#auto-translate-status");
+sourceLanguagesField.addEventListener("change", event => {
+  if (event.target === allSourceLanguages) {
+    for (const checkbox of sourceInputs) checkbox.checked = allSourceLanguages.checked;
+  }
+  updateSourceSummary();
+});
+
+let savedSettings;
 try {
-  const settings = await chrome.storage.local.get("autoTranslate");
-  autoTranslate.checked = settings.autoTranslate === true;
-  autoTranslate.disabled = false;
-  autoTranslate.addEventListener("change", async () => {
-    const checked = autoTranslate.checked;
-    autoTranslate.disabled = true;
-    try {
-      await chrome.storage.local.set({ autoTranslate: checked });
-      autoTranslateStatus.textContent = "";
-    } catch {
-      autoTranslate.checked = !checked;
-      autoTranslateStatus.textContent = "自動翻訳の設定を保存できませんでした。";
-    } finally {
-      autoTranslate.disabled = false;
-    }
-  });
+  const { targetLanguage, sourceLanguages, inferenceMode, autoTranslate: automatic } =
+    await chrome.storage.local.get(["targetLanguage", "sourceLanguages", "inferenceMode", "autoTranslate"]);
+  languageSelect.value = translationLanguage(targetLanguage);
+  for (const checkbox of sourceInputs) checkbox.checked = sourceLanguages?.includes(checkbox.value) ?? true;
+  updateSourceSummary();
+  inferenceSelect.value = inferenceMode === "gpu" || inferenceMode === "cpu" ? inferenceMode : "auto";
+  autoTranslate.checked = automatic === true;
+  savedSettings = readSettings();
+  for (const control of [languageSelect, sourceLanguagesField, inferenceSelect, autoTranslate]) control.disabled = false;
+  settingsFields.disabled = false;
+  saveButton.disabled = false;
 } catch {
-  autoTranslateStatus.textContent = "自動翻訳の設定を読み込めませんでした。";
+  saveStatus.textContent = "設定を読み込めませんでした。";
 }
+
+function readChanges(draft) {
+  const changes = Object.fromEntries(Object.entries(draft).filter(([key, value]) =>
+    JSON.stringify(value) !== JSON.stringify(savedSettings[key])));
+  const model = modelSelect.selectedOptions[0];
+  if (model?.value && !model.defaultSelected) changes.selectedModel = model.value;
+  return changes;
+}
+
+settingsForm.addEventListener("change", () => {
+  saveStatus.textContent = Object.keys(readChanges(readSettings())).length ? "未保存の変更があります。" : "";
+});
+
+settingsForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (saveButton.disabled) return;
+  const draft = readSettings();
+  const changes = readChanges(draft);
+  settingsFields.disabled = true;
+  saveButton.disabled = true;
+  saveStatus.textContent = "保存中…";
+  try {
+    if (changes.selectedModel) {
+      await withModelLock(async () => {
+        if (!await savedModel(changes.selectedModel)) throw new Error("選択したモデルは削除されました。");
+        await chrome.storage.local.set(changes);
+      });
+      for (const option of modelSelect.options) option.defaultSelected = option.value === changes.selectedModel;
+      modelSelect.value = changes.selectedModel;
+    } else if (Object.keys(changes).length) {
+      await chrome.storage.local.set(changes);
+    }
+    savedSettings = draft;
+    saveStatus.textContent = "設定を保存しました。";
+  } catch (error) {
+    saveStatus.textContent = `設定を保存できませんでした。 ${error.message}`;
+  } finally {
+    settingsFields.disabled = false;
+    saveButton.disabled = false;
+  }
+});
 
 const mebibyte = 1024 * 1024;
 const cacheSettings = document.querySelector("#cache-settings");

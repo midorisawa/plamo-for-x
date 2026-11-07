@@ -81,10 +81,11 @@ export function setupModelSettings(popup) {
     try {
       const available = new Map(await Promise.all(models.map(async ({ id }) => [id, await savedModel(id)])));
       const active = await readActiveModel(available);
+      const draft = select.selectedOptions[0]?.defaultSelected ? "" : select.value;
       const options = models.filter(({ id }) => available.get(id))
-        .map(({ id, label }) => new Option(`PLaMo 3 Translate ${label}`, id));
+        .map(({ id, label }) => new Option(`PLaMo 3 Translate ${label}`, id, id === active?.id));
       select.replaceChildren(...(options.length ? options : [new Option("モデル未登録", "")]));
-      select.value = active?.id ?? "";
+      select.value = available.get(draft) ? draft : active?.id ?? "";
       select.disabled = busy || !active;
       input.disabled = busy;
       for (const { id, size, status, download, remove } of rows) {
@@ -126,13 +127,6 @@ export function setupModelSettings(popup) {
     }, feedback, success, signal);
   }
 
-  select.addEventListener("change", () => {
-    const id = select.value;
-    run(async () => {
-      if (!await savedModel(id)) throw new Error("選択したモデルは削除されました。");
-      await chrome.storage.local.set({ selectedModel: id });
-    }, selectionStatus);
-  });
   input.addEventListener("change", async () => {
     const file = input.files[0];
     if (!file) return;

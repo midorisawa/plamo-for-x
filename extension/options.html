@@ -10,12 +10,13 @@
     <h1>SNS Translatorの設定</h1>
   </header>
 
+  <form id="translation-settings">
+  <fieldset id="translation-fields" disabled>
   <section aria-labelledby="translation-title">
     <h2 id="translation-title">翻訳</h2>
     <label class="field">翻訳先の言語
       <select id="target-language" disabled></select>
     </label>
-    <p id="language-status" role="status"></p>
     <details>
       <summary>翻訳する原文の言語</summary>
       <fieldset id="source-languages" aria-label="翻訳対象" disabled>
@@ -23,12 +24,10 @@
         <p class="muted">翻訳する言語を選択してください。複数選べます。</p>
         <div id="source-language-choices"></div>
       </fieldset>
-      <p id="source-language-status" role="status"></p>
     </details>
     <label class="check">
       <input id="auto-translate" type="checkbox" disabled>読み込まれた投稿から順に自動で翻訳する
     </label>
-    <p id="auto-translate-status" role="status"></p>
   </section>
 
   <section id="model" aria-labelledby="model-title">
@@ -40,7 +39,6 @@
         <option value="cpu">CPU</option>
       </select>
     </label>
-    <p id="inference-status" role="status"></p>
     <div class="model-panel">
       <label class="field">翻訳に使うモデル
         <select id="selected-model" disabled><option value="">確認中…</option></select>
@@ -50,6 +48,8 @@
       <button id="show-model-manager" type="button" hidden>モデル管理を開く</button>
     </div>
   </section>
+  </fieldset>
+  </form>
 
   <section aria-labelledby="cache-title">
     <h2 id="cache-title">翻訳キャッシュ</h2>
@@ -71,6 +71,10 @@
       <p id="cache-status" role="status"></p>
     </form>
   </section>
+  <footer class="save-bar">
+    <p id="save-status" role="status"></p>
+    <button id="save-settings" type="submit" form="translation-settings" disabled>保存</button>
+  </footer>
 </main>
 <dialog id="model-manager" aria-labelledby="model-manager-title">
   <header class="manager-header">
