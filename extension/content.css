@@ -32,7 +32,32 @@
 }
 
 .sns-translator button:disabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   cursor: wait;
+}
+
+.sns-translator button:disabled::after {
+  content: "";
+  box-sizing: border-box;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  animation: sns-translator-spin 750ms linear infinite;
+}
+
+@keyframes sns-translator-spin {
+  to { transform: rotate(1turn); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sns-translator button:disabled::after {
+    animation: none;
+  }
 }
 
 .sns-translator [role="status"] {
