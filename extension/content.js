@@ -491,11 +491,23 @@ function updateTargetLanguage(saved) {
   document.querySelectorAll(targetSelector).forEach(mount);
 }
 
+let autoTranslatePreference;
+function applyAutoTranslatePreference(saved) {
+  autoTranslatePreference = saved;
+  if (typeof saved === "boolean") {
+    updateAutoTranslate(saved);
+    return;
+  }
+  chrome.runtime.sendMessage({ type: "get-gpu-support" }).then(gpu => {
+    if (typeof autoTranslatePreference !== "boolean") updateAutoTranslate(gpu === true);
+  }).catch(() => {});
+}
+
 chrome.storage.local.get(["targetLanguage", "sourceLanguages", "autoTranslate"])
   .then(settings => {
     sourceLanguages = Array.isArray(settings.sourceLanguages) ? settings.sourceLanguages : null;
     updateTargetLanguage(settings.targetLanguage);
-    updateAutoTranslate(settings.autoTranslate);
+    applyAutoTranslatePreference(settings.autoTranslate);
   })
   .catch(() => updateTargetLanguage());
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -506,7 +518,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     document.querySelectorAll(targetSelector).forEach(mount);
   }
   if (changes.targetLanguage) updateTargetLanguage(changes.targetLanguage.newValue);
-  if (changes.autoTranslate) updateAutoTranslate(changes.autoTranslate.newValue);
+  if (changes.autoTranslate) applyAutoTranslatePreference(changes.autoTranslate.newValue);
 });
 document.addEventListener("visibilitychange", () => {
   if (document.querySelector(".sns-translator")) warmTranslation();

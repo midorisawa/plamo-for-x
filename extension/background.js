@@ -20,10 +20,16 @@ async function ensureOffscreen() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message.type === "get-gpu-support") {
+    ensureOffscreen()
+      .then(() => chrome.runtime.sendMessage({ type: "check-engine-gpu" }))
+      .then(respond, () => respond(false));
+    return true;
+  }
   if (message.type === "warm-translation" && sender.tab) {
     (async () => {
       await ensureOffscreen();
-      const { inferenceMode: mode = "auto", selectedModel } =
+      const { inferenceMode: mode, selectedModel } =
         await chrome.storage.local.get(["inferenceMode", "selectedModel"]);
       return chrome.runtime.sendMessage({ type: "warm-engine", mode, selectedModel });
     })().then(respond, () => respond());
@@ -32,7 +38,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message.type === "translate-post" && sender.tab?.id !== undefined && sender.documentId) {
     (async () => {
       await ensureOffscreen();
-      const { inferenceMode: mode = "auto", selectedModel } =
+      const { inferenceMode: mode, selectedModel } =
         await chrome.storage.local.get(["inferenceMode", "selectedModel"]);
       return chrome.runtime.sendMessage({
         type: "infer",

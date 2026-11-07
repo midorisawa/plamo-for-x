@@ -88,9 +88,12 @@ try {
     await chrome.storage.local.get(["targetLanguage", "sourceLanguages", "inferenceMode", "autoTranslate"]);
   languageSelect.value = translationLanguage(targetLanguage);
   for (const checkbox of sourceInputs) checkbox.checked = sourceLanguages?.includes(checkbox.value) ?? true;
-  inferenceSelect.value = inferenceMode === "gpu" || inferenceMode === "cpu" ? inferenceMode : "auto";
-  autoTranslate.checked = automatic === true;
   updateSourceChoices();
+  const explicitMode = inferenceMode === "gpu" || inferenceMode === "cpu";
+  const gpu = (!explicitMode || typeof automatic !== "boolean") &&
+    await chrome.runtime.sendMessage({ type: "get-gpu-support" }).catch(() => false) === true;
+  inferenceSelect.value = explicitMode ? inferenceMode : gpu ? "gpu" : "cpu";
+  autoTranslate.checked = typeof automatic === "boolean" ? automatic : gpu;
   savedSettings = readSettings();
   for (const control of [languageSelect, sourceLanguagesField, inferenceSelect, autoTranslate]) control.disabled = false;
   settingsFields.disabled = false;

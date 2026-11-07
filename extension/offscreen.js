@@ -1,4 +1,5 @@
 import { activeModel, defaultModel } from "./model.js";
+import { checkGpu } from "./gpu.js";
 import { readTranslation, saveTranslation } from "./translation-cache.js";
 
 let worker;
@@ -7,6 +8,11 @@ let workerMode;
 let idleTimer;
 let preparing;
 let busy = false;
+let gpuSupport;
+
+function gpuAvailable() {
+  return gpuSupport ??= checkGpu().then(() => true, () => false);
+}
 
 function resetWorker() {
   clearTimeout(idleTimer);
@@ -35,6 +41,7 @@ function prepare(mode, model, selectedModel) {
     clearTimeout(idleTimer);
     model ??= (await activeModel(selectedModel))?.file;
     if (!model) throw new Error("拡張機能の設定でモデルを読み込んでください。");
+    if (mode !== "gpu" && mode !== "cpu") mode = await gpuAvailable() ? "gpu" : "cpu";
     if (worker && model.name === loadedModel.name && model.lastModified === loadedModel.lastModified &&
         model.size === loadedModel.size && mode === workerMode) return;
     resetWorker();
@@ -141,6 +148,10 @@ async function infer(message, respond) {
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.tab) return;
+  if (message.type === "check-engine-gpu") {
+    gpuAvailable().then(respond);
+    return true;
+  }
   if (message.type === "warm-engine") {
     respond({ accepted: true });
     if (!busy) prepare(message.mode, undefined, message.selectedModel).catch(() => {});
