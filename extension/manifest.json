@@ -33,7 +33,7 @@
     "world": "MAIN"
   }, {
     "matches": ["https://x.com/*"],
-    "js": ["languages.js", "links.js", "content.js"],
+    "js": ["toolbar-theme.js", "languages.js", "links.js", "content.js"],
     "css": ["content.css"],
     "run_at": "document_idle"
   }],

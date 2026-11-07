@@ -3,13 +3,6 @@ import { checkGpu } from "./gpu.js";
 import { readTranslation, saveTranslation } from "./translation-cache.js";
 import { glossaryLimit, validGlossaryTerm } from "./glossary.js";
 
-const colorScheme = matchMedia("(prefers-color-scheme: dark)");
-function updateToolbarIcon() {
-  chrome.runtime.sendMessage({ type: "toolbar-color-scheme", dark: colorScheme.matches }).catch(() => {});
-}
-colorScheme.addEventListener("change", updateToolbarIcon);
-updateToolbarIcon();
-
 let worker;
 let loadedModel;
 let workerMode;

@@ -43,11 +43,21 @@ chrome.tabs.onRemoved.addListener(async () => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (message.type === "toolbar-color-scheme" && sender.url === chrome.runtime.getURL(offscreenPage)) {
-    const theme = message.dark ? "dark" : "light";
-    chrome.action.setIcon({
-      path: { 16: `icons/toolbar-${theme}-16.png`, 32: `icons/toolbar-${theme}-32.png` },
-    }).then(() => respond(true), () => respond(false));
+  if (message.type === "toolbar-color-scheme" && typeof message.dark === "boolean") {
+    (async () => {
+      if (sender.url === chrome.runtime.getURL(offscreenPage)) {
+        // Chromeの外観を参照できる画面があれば、OSの配色による上書きを避ける
+        const [tabs, pages] = await Promise.all([
+          chrome.tabs.query({ url: "https://x.com/*", discarded: false }),
+          chrome.runtime.getContexts({ contextTypes: ["TAB", "POPUP"] }),
+        ]);
+        if (tabs.length || pages.length) return;
+      }
+      const theme = message.dark ? "dark" : "light";
+      await chrome.action.setIcon({
+        path: { 16: `icons/toolbar-${theme}-16.png`, 32: `icons/toolbar-${theme}-32.png` },
+      });
+    })().then(() => respond(true), () => respond(false));
     return true;
   }
   if (sender.tab && message.type === "get-glossary-terms") {
