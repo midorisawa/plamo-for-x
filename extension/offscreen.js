@@ -2,6 +2,7 @@ import { savedModel } from "./model.js";
 
 let worker;
 let modelVersion;
+let workerMode;
 let idleTimer;
 let preparing;
 let busy = false;
@@ -28,17 +29,18 @@ function keepWorkerReady() {
   idleTimer = setTimeout(resetWorker, 5 * 60 * 1000);
 }
 
-function prepare() {
+function prepare(mode) {
   preparing ??= (async () => {
     clearTimeout(idleTimer);
     const model = await savedModel();
     if (!model) throw new Error("拡張機能の設定でモデルを読み込んでください。");
-    if (worker && model.lastModified === modelVersion) return;
+    if (worker && model.lastModified === modelVersion && mode === workerMode) return;
     resetWorker();
     worker = new Worker("./inference-worker.js", { type: "module" });
-    const result = await runWorker({ blob: model });
+    const result = await runWorker({ blob: model, mode });
     if (result.error) throw new Error(result.error);
     modelVersion = model.lastModified;
+    workerMode = mode;
   })().catch(error => {
     resetWorker();
     throw error;
@@ -49,11 +51,13 @@ function prepare() {
   return preparing;
 }
 
-async function translate(text, target, onPartial) {
+async function translate(text, target, mode, onPartial) {
   if (text.includes("<|plamo:") || text.includes("\0")) {
     return { error: "原文に翻訳できない制御文字が含まれています。" };
   }
-  await prepare();
+  // 事前読み込みの完了を待ち、翻訳時に指定された実行先を適用する
+  if (preparing) await preparing.catch(() => {});
+  await prepare(mode);
   const result = await runWorker({ text, target }, onPartial);
   if (result.error) resetWorker();
   else keepWorkerReady();
@@ -64,7 +68,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.tab) return;
   if (message.type === "warm-engine") {
     respond({ accepted: true });
-    if (!busy) prepare().catch(() => {});
+    if (!busy) prepare(message.mode).catch(() => {});
     return;
   }
   if (message.type !== "infer") return;
@@ -74,11 +78,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   busy = true;
   respond({ accepted: true });
-  const { id, tabId, documentId, text, target } = message;
+  const { id, tabId, documentId, text, target, mode } = message;
   function sendResult(result) {
     return chrome.runtime.sendMessage({ type: "inference-result", id, tabId, documentId, result }).catch(() => {});
   }
-  translate(text, target, sendResult).catch(error => {
+  translate(text, target, mode, sendResult).catch(error => {
     resetWorker();
     return { error: error.message };
   }).then(result => {

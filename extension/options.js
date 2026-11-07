@@ -4,6 +4,8 @@ const input = document.querySelector("input");
 const status = document.querySelector("#status");
 const languageSelect = document.querySelector("#target-language");
 const languageStatus = document.querySelector("#language-status");
+const inferenceSelect = document.querySelector("#inference-mode");
+const inferenceStatus = document.querySelector("#inference-status");
 const browserLanguage = preferredTranslationLanguage();
 const languageNames = new Intl.DisplayNames(["ja"], { type: "language" });
 languageSelect.add(new Option(
@@ -32,6 +34,28 @@ try {
   });
 } catch {
   languageStatus.textContent = "翻訳先の設定を読み込めませんでした。";
+}
+
+try {
+  const { inferenceMode } = await chrome.storage.local.get("inferenceMode");
+  let savedMode = inferenceMode === "gpu" || inferenceMode === "cpu" ? inferenceMode : "auto";
+  inferenceSelect.value = savedMode;
+  inferenceSelect.disabled = false;
+  inferenceSelect.addEventListener("change", async () => {
+    inferenceSelect.disabled = true;
+    try {
+      await chrome.storage.local.set({ inferenceMode: inferenceSelect.value });
+      savedMode = inferenceSelect.value;
+      inferenceStatus.textContent = "";
+    } catch {
+      inferenceSelect.value = savedMode;
+      inferenceStatus.textContent = "翻訳の実行先を保存できませんでした。";
+    } finally {
+      inferenceSelect.disabled = false;
+    }
+  });
+} catch {
+  inferenceStatus.textContent = "翻訳の実行先を読み込めませんでした。";
 }
 
 try {

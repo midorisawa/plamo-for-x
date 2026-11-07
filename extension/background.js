@@ -23,18 +23,23 @@ chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message.type === "warm-translation" && sender.tab) {
-    ensureOffscreen().then(() => chrome.runtime.sendMessage({ type: "warm-engine" }))
-      .then(respond, () => respond());
+    (async () => {
+      await ensureOffscreen();
+      const { inferenceMode: mode = "auto" } = await chrome.storage.local.get("inferenceMode");
+      return chrome.runtime.sendMessage({ type: "warm-engine", mode });
+    })().then(respond, () => respond());
     return true;
   }
   if (message.type === "translate-post" && sender.tab?.id !== undefined && sender.documentId) {
     (async () => {
       await ensureOffscreen();
+      const { inferenceMode: mode = "auto" } = await chrome.storage.local.get("inferenceMode");
       return chrome.runtime.sendMessage({
         type: "infer",
         id: message.id,
         text: message.text,
         target: message.target,
+        mode,
         tabId: sender.tab.id,
         documentId: sender.documentId,
       });

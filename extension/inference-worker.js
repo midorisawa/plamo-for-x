@@ -20,21 +20,28 @@ async function loadModel(blob, gpu) {
   return { module, call };
 }
 
-async function prepareModel(blob) {
+async function prepareModel(blob, mode) {
+  if (mode === "cpu") return loadModel(blob, false);
+
   try {
-    if (navigator.gpu && WebAssembly.Suspending) {
-      const adapter = await navigator.gpu.requestAdapter();
-      if (adapter?.features.has("shader-f16")) return await loadModel(blob, true);
+    if (!navigator.gpu || !WebAssembly.Suspending) {
+      throw new Error("このブラウザではGPU翻訳に必要な機能を利用できません。");
     }
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter?.features.has("shader-f16")) {
+      throw new Error("GPU翻訳に必要な16ビット浮動小数点演算を利用できません。");
+    }
+    return await loadModel(blob, true);
   } catch (error) {
+    if (mode === "gpu") throw new Error(`GPUを使用できません。 ${error.message}`);
     console.debug("WebGPU initialization failed; falling back to CPU", error);
+    return loadModel(blob, false);
   }
-  return loadModel(blob, false);
 }
 
-self.onmessage = async ({ data: { text, blob, target } }) => {
+self.onmessage = async ({ data: { text, blob, target, mode } }) => {
   try {
-    runtime ??= await prepareModel(blob);
+    runtime ??= await prepareModel(blob, mode);
     if (text === undefined) {
       self.postMessage({ ready: true });
       return;
