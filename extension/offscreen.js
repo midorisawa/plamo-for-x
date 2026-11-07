@@ -10,6 +10,7 @@ let idleTimer;
 let preparing;
 let busy = false;
 let gpuSupport;
+let releaseWhenIdle = false;
 
 function gpuAvailable() {
   return gpuSupport ??= checkGpu().then(() => true, () => false);
@@ -33,6 +34,10 @@ function runWorker(message, onPartial) {
 }
 
 function keepWorkerReady() {
+  if (releaseWhenIdle) {
+    resetWorker();
+    return;
+  }
   clearTimeout(idleTimer);
   idleTimer = setTimeout(resetWorker, 5 * 60 * 1000);
 }
@@ -156,6 +161,7 @@ async function infer(message, respond) {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.tab) return;
   if (message.type === "release-engine") {
+    releaseWhenIdle = true;
     if (!busy && !preparing) resetWorker();
     respond();
     return;
@@ -165,11 +171,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
   if (message.type === "warm-engine") {
+    releaseWhenIdle = false;
     respond({ accepted: true });
     if (!busy) prepare(message.mode, undefined, message.selectedModel).catch(() => {});
     return;
   }
   if (message.type !== "infer") return;
+  releaseWhenIdle = false;
   infer(message, respond).catch(error => respond({ error: error.message }));
   return true;
 });

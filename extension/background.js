@@ -2,6 +2,7 @@ import { glossaryTerms } from "./glossary.js";
 
 const offscreenPage = "offscreen.html";
 let creating;
+let iconUpdate = Promise.resolve();
 
 function offscreenContexts() {
   return chrome.runtime.getContexts({
@@ -27,16 +28,44 @@ async function ensureOffscreen() {
 
 function startThemeObserver() {
   ensureOffscreen().catch(error => console.warn("アイコンの配色を確認できませんでした。", error));
+  updateToolbarIcon().catch(error => console.warn("アイコンを更新できませんでした。", error));
 }
 
 chrome.runtime.onInstalled.addListener(startThemeObserver);
 chrome.runtime.onStartup.addListener(startThemeObserver);
 
+function updateToolbarIcon(dark) {
+  const update = iconUpdate.then(async () => {
+    if (typeof dark === "boolean") await chrome.storage.session.set({ toolbarDark: dark });
+    const { enabled } = await chrome.storage.local.get("enabled");
+    const { toolbarDark } = await chrome.storage.session.get("toolbarDark");
+    const theme = enabled === false ? "disabled" : toolbarDark ? "dark" : "light";
+    await chrome.action.setIcon({
+      path: { 16: `icons/toolbar-${theme}-16.png`, 32: `icons/toolbar-${theme}-32.png` },
+    });
+  });
+  iconUpdate = update.catch(() => {});
+  return update;
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.enabled) {
+    updateToolbarIcon().catch(error => console.warn("アイコンを更新できませんでした。", error));
+    if (changes.enabled.newValue === false) {
+      releaseEngine().catch(error => console.warn("翻訳エンジンを終了できませんでした。", error));
+    }
+  }
+});
+
+async function releaseEngine() {
+  await creating?.catch(() => {});
+  if ((await offscreenContexts()).length) await chrome.runtime.sendMessage({ type: "release-engine" });
+}
+
 chrome.tabs.onRemoved.addListener(async () => {
   try {
-    if (!(await offscreenContexts()).length) return;
     const tabs = await chrome.tabs.query({ url: "https://x.com/*" });
-    if (!tabs.length) await chrome.runtime.sendMessage({ type: "release-engine" });
+    if (!tabs.length) await releaseEngine();
   } catch (error) {
     console.warn("翻訳エンジンを終了できませんでした。", error);
   }
@@ -53,10 +82,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         ]);
         if (tabs.length || pages.length) return;
       }
-      const theme = message.dark ? "dark" : "light";
-      await chrome.action.setIcon({
-        path: { 16: `icons/toolbar-${theme}-16.png`, 32: `icons/toolbar-${theme}-32.png` },
-      });
+      await updateToolbarIcon(message.dark);
     })().then(() => respond(true), () => respond(false));
     return true;
   }
@@ -76,18 +102,20 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   if (message.type === "warm-translation" && sender.tab) {
     (async () => {
+      const { enabled, inferenceMode: mode, selectedModel } =
+        await chrome.storage.local.get(["enabled", "inferenceMode", "selectedModel"]);
+      if (enabled === false) return;
       await ensureOffscreen();
-      const { inferenceMode: mode, selectedModel } =
-        await chrome.storage.local.get(["inferenceMode", "selectedModel"]);
       return chrome.runtime.sendMessage({ type: "warm-engine", mode, selectedModel });
     })().then(respond, () => respond());
     return true;
   }
   if (message.type === "translate-post" && sender.tab?.id !== undefined && sender.documentId) {
     (async () => {
+      const { enabled, inferenceMode: mode, selectedModel } =
+        await chrome.storage.local.get(["enabled", "inferenceMode", "selectedModel"]);
+      if (enabled === false) return { error: "投稿の翻訳は無効です。" };
       await ensureOffscreen();
-      const { inferenceMode: mode, selectedModel } =
-        await chrome.storage.local.get(["inferenceMode", "selectedModel"]);
       return chrome.runtime.sendMessage({
         type: "infer",
         id: message.id,

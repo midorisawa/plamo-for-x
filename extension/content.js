@@ -16,6 +16,7 @@ const manualQueue = new Set();
 let lastWarmup = -Infinity;
 let targetLanguage = "";
 let sourceLanguages = null;
+let translationEnabled = false;
 let autoTranslate = false;
 let activeTranslations = 0;
 let draining = false;
@@ -23,6 +24,7 @@ let expandedPreview;
 let glossaryRevision = 0;
 
 function requestTranslation(text, target, glossary, onPartial, postId, preview) {
+  if (!translationEnabled) return Promise.resolve({ error: "投稿の翻訳は無効です。" });
   const id = crypto.randomUUID();
   return new Promise(resolve => {
     function finish(result) {
@@ -51,10 +53,10 @@ function requestTranslation(text, target, glossary, onPartial, postId, preview) 
 }
 
 async function drainAutoQueue() {
-  if (draining || !autoTranslate || document.visibilityState !== "visible") return;
+  if (draining || !translationEnabled || !autoTranslate || document.visibilityState !== "visible") return;
   draining = true;
   try {
-    while (autoTranslate && document.visibilityState === "visible" && !activeTranslations && autoQueue.size) {
+    while (translationEnabled && autoTranslate && document.visibilityState === "visible" && !activeTranslations && autoQueue.size) {
       const state = nextAutoTranslation();
       if (state.panel.isConnected && !state.attempted && await state.translate(true)) {
         // 別のタブの翻訳が終わるまで、同じ投稿を先頭に残す
@@ -104,7 +106,7 @@ function updateAutoTranslate(enabled) {
 }
 
 async function warmTranslation() {
-  if (document.visibilityState !== "visible" || performance.now() - lastWarmup < 30000) return;
+  if (!translationEnabled || document.visibilityState !== "visible" || performance.now() - lastWarmup < 30000) return;
   lastWarmup = performance.now();
   try {
     await chrome.runtime.sendMessage({ type: "warm-translation" });
@@ -190,10 +192,11 @@ function canTranslate(source, target) {
 }
 
 function mount(root) {
+  if (!translationEnabled) return;
   const target = targetLanguage;
   let post = readTarget(root);
   const previous = states.get(root);
-  if (previous?.revealing) return;
+  if (previous?.revealing && previous.panel.isConnected) return;
   const isNote = root.matches(noteSelector);
   const isProfile = root.matches(profileSelector);
   const collapsed = !isNote && !isProfile && (post?.shortened || [...root.querySelectorAll(showMoreSelector)]
@@ -279,7 +282,7 @@ function mount(root) {
   }
 
   async function runTranslation(automatic) {
-    if (button.disabled) return;
+    if (!translationEnabled || !panel.isConnected || button.disabled) return;
     if (!automatic && translation !== null) {
       showTranslation(!panel.hasAttribute("data-show-translation"));
       return;
@@ -320,6 +323,10 @@ function mount(root) {
       panel.setAttribute("data-keep-grok", "");
       state.revealing = true;
       const original = await switchNativeTranslation(root, post, false);
+      if (!panel.isConnected) {
+        if (!translationEnabled && original?.native?.button) await switchNativeTranslation(root, original, true);
+        return;
+      }
       if (!original) {
         state.revealing = false;
         grok.remove();
@@ -329,12 +336,16 @@ function mount(root) {
         if (target !== targetLanguage || !matches(post, readTarget(root)) || !panel.isConnected) mount(root);
         return;
       }
+      state.post = original;
+      state.restoreNative = true;
       const language = isProfile ? await detectProfileLanguage(original) : translationLanguage(original.language);
+      if (!panel.isConnected) return;
       if (isProfile) profileLanguage = language;
       originalLanguages.set(root, { id: post.id, text: post.text, language });
       post = state.post = original;
       post.body.before(panel);
       if (!canTranslate(language, target) || target !== targetLanguage) {
+        state.restoreNative = false;
         if (original.native?.button) await switchNativeTranslation(root, original, true);
         state.revealing = false;
         mount(root);
@@ -418,6 +429,7 @@ function mount(root) {
       }
 
       const { terms: glossary, error } = await chrome.runtime.sendMessage({ type: "get-glossary-terms" });
+      if (!panel.isConnected) return;
       if (error) {
         finish({ error });
         return;
@@ -464,7 +476,7 @@ function mount(root) {
 
 document.addEventListener("click", event => {
   // 原文の取得に使う拡張機能自身のクリックと、利用者による操作を区別する
-  if (!event.isTrusted) return;
+  if (!translationEnabled || !event.isTrusted) return;
   const showMore = event.target.closest(showMoreSelector);
   if (showMore) {
     const state = states.get(showMore.closest(targetSelector));
@@ -502,24 +514,57 @@ function updateTargetLanguage(saved) {
 let autoTranslatePreference;
 function applyAutoTranslatePreference(saved) {
   autoTranslatePreference = saved;
+  if (!translationEnabled) return;
   if (typeof saved === "boolean") {
     updateAutoTranslate(saved);
     return;
   }
   chrome.runtime.sendMessage({ type: "get-gpu-support" }).then(gpu => {
-    if (typeof autoTranslatePreference !== "boolean") updateAutoTranslate(gpu === true);
+    if (translationEnabled && typeof autoTranslatePreference !== "boolean") updateAutoTranslate(gpu === true);
   }).catch(() => {});
 }
 
-chrome.storage.local.get(["targetLanguage", "sourceLanguages", "autoTranslate"])
+function setTranslationEnabled(enabled) {
+  if (translationEnabled === enabled) return;
+  translationEnabled = enabled;
+  if (enabled) {
+    lastWarmup = -Infinity;
+    postObserver.observe(document.body, {
+      childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["lang", "href", "dir"],
+    });
+    applyAutoTranslatePreference(autoTranslatePreference);
+    document.querySelectorAll(targetSelector).forEach(mount);
+    return;
+  }
+  postObserver.disconnect();
+  updateAutoTranslate(false);
+  manualQueue.clear();
+  expandedPreview = undefined;
+  for (const root of document.querySelectorAll(targetSelector)) {
+    const state = states.get(root);
+    if (state?.restoreNative && state.panel.isConnected && state.post.native?.button && matches(state.post, readTarget(root))) {
+      switchNativeTranslation(root, state.post, true);
+    }
+  }
+  document.querySelectorAll(".sns-translator").forEach(panel => panel.remove());
+  document.querySelectorAll(".sns-translator-native-row").forEach(row => row.classList.remove("sns-translator-native-row"));
+  for (const finish of pending.values()) finish({ error: "投稿の翻訳は無効です。" });
+}
+
+chrome.storage.local.get(["enabled", "targetLanguage", "sourceLanguages", "autoTranslate"])
   .then(settings => {
     sourceLanguages = Array.isArray(settings.sourceLanguages) ? settings.sourceLanguages : null;
     updateTargetLanguage(settings.targetLanguage);
     applyAutoTranslatePreference(settings.autoTranslate);
+    setTranslationEnabled(settings.enabled !== false);
   })
-  .catch(() => updateTargetLanguage());
+  .catch(() => {
+    updateTargetLanguage();
+    setTranslationEnabled(true);
+  });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
+  if (changes.enabled?.newValue === false) setTranslationEnabled(false);
   if (changes.glossaries || changes.selectedGlossaryIds) {
     glossaryRevision++;
     expandedPreview = undefined;
@@ -531,19 +576,21 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (changes.targetLanguage) updateTargetLanguage(changes.targetLanguage.newValue);
   if (changes.autoTranslate) applyAutoTranslatePreference(changes.autoTranslate.newValue);
+  if (changes.enabled && changes.enabled.newValue !== false) setTranslationEnabled(true);
 });
 document.addEventListener("visibilitychange", () => {
   if (document.querySelector(".sns-translator")) warmTranslation();
   drainAutoQueue();
 });
 document.addEventListener("sns-translator-quote-ready", event => {
+  if (!translationEnabled) return;
   const id = event.detail;
   if (typeof id !== "string" || !/^\d+$/.test(id)) return;
   for (const article of document.querySelectorAll(`${postSelector}:has(a[href$="/status/${id}"] time)`)) {
     article.querySelectorAll(quoteSelector).forEach(mount);
   }
 });
-new MutationObserver(records => {
+const postObserver = new MutationObserver(records => {
   const targets = new Set();
   for (const { target, addedNodes } of records) {
     const element = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
@@ -559,4 +606,4 @@ new MutationObserver(records => {
   for (const root of targets) {
     if (root.isConnected) mount(root);
   }
-}).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["lang", "href", "dir"] });
+});

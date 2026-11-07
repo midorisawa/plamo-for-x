@@ -11,6 +11,35 @@ if (!popup) {
   document.querySelector("#glossary-picker").open = true;
 }
 setupGlossarySettings(popup);
+const enabledSwitch = document.querySelector("#enabled");
+const enabledLabel = document.querySelector("#enabled-label");
+let translationEnabled = true;
+
+function showEnabled(value) {
+  translationEnabled = value !== false;
+  enabledSwitch.checked = translationEnabled;
+  enabledLabel.textContent = translationEnabled ? "有効" : "無効";
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.enabled) showEnabled(changes.enabled.newValue);
+});
+chrome.storage.local.get("enabled").then(({ enabled }) => {
+  showEnabled(enabled);
+  enabledSwitch.disabled = false;
+}).catch(() => { enabledLabel.textContent = "状態を読み込めませんでした"; });
+enabledSwitch.addEventListener("change", async () => {
+  enabledSwitch.disabled = true;
+  try {
+    await chrome.storage.local.set({ enabled: enabledSwitch.checked });
+  } catch {
+    enabledSwitch.checked = translationEnabled;
+    enabledLabel.textContent = "切り替えられませんでした";
+  } finally {
+    enabledSwitch.disabled = false;
+  }
+});
+
 const languageSelect = document.querySelector("#target-language");
 const settingsForm = document.querySelector("#translation-settings");
 const settingsFields = document.querySelector("#translation-fields");
