@@ -1,4 +1,5 @@
 import { importModel, savedModel } from "./model.js";
+import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translation-cache.js";
 
 const input = document.querySelector('input[type="file"]');
 const status = document.querySelector("#status");
@@ -151,3 +152,48 @@ input.addEventListener("change", async () => {
   }
 });
 input.disabled = false;
+
+const mebibyte = 1024 * 1024;
+const cacheSettings = document.querySelector("#cache-settings");
+const cacheFields = cacheSettings.querySelector("fieldset");
+const cacheLimitInput = document.querySelector("#cache-limit");
+const cacheMeter = document.querySelector("#cache-meter");
+const cacheUsage = document.querySelector("#cache-usage");
+const cacheStatus = document.querySelector("#cache-status");
+const cacheNumber = new Intl.NumberFormat("ja", { maximumFractionDigits: 2 });
+
+async function updateCacheSettings(action, success, failure, syncLimit = true) {
+  cacheFields.disabled = true;
+  try {
+    await action?.();
+    const { bytes, limit } = await readCacheUsage();
+    cacheMeter.max = limit;
+    cacheMeter.value = bytes;
+    const used = bytes > 0 && bytes / mebibyte < 0.01
+      ? "0.01MiB未満" : `${cacheNumber.format(bytes / mebibyte)}MiB`;
+    cacheUsage.textContent = `${used} / ${cacheNumber.format(limit / mebibyte)}MiB`;
+    if (syncLimit) cacheLimitInput.value = limit / mebibyte;
+    cacheStatus.textContent = success;
+  } catch {
+    cacheStatus.textContent = failure;
+  } finally {
+    cacheFields.disabled = false;
+  }
+}
+
+cacheSettings.addEventListener("submit", event => {
+  event.preventDefault();
+  const limit = cacheLimitInput.valueAsNumber * mebibyte;
+  updateCacheSettings(() => setCacheLimit(limit), "キャッシュの上限を保存しました。", "キャッシュの上限を保存できませんでした。");
+});
+document.querySelector("#clear-cache").addEventListener("click", () => {
+  if (window.confirm("保存済みの翻訳キャッシュをすべて削除しますか？")) {
+    updateCacheSettings(clearTranslationCache, "キャッシュを削除しました。", "キャッシュを削除できませんでした。");
+  }
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && !cacheFields.disabled) {
+    updateCacheSettings(null, cacheStatus.textContent, "キャッシュの使用量を読み込めませんでした。", false);
+  }
+});
+updateCacheSettings(null, "", "キャッシュの使用量を読み込めませんでした。");

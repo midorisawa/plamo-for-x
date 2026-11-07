@@ -32,6 +32,18 @@
 <p><a href="https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF/resolve/main/plamo-3-translate-0.8b-Q4_K_M.gguf">モデルをダウンロード（約573MB）</a></p>
 <label>ダウンロードしたGGUFファイル <input type="file" accept=".gguf" disabled></label>
 <p role="status" id="status">モデルを確認中…</p>
+<form id="cache-settings">
+  <fieldset disabled>
+    <legend>翻訳キャッシュ</legend>
+    <p>使用量 <meter id="cache-meter" aria-label="翻訳キャッシュの使用量" min="0" max="1" value="0"></meter>
+      <span id="cache-usage" role="status">確認中…</span>
+    </p>
+    <label>上限（MiB） <input id="cache-limit" type="number" min="1" step="1" required></label>
+    <button type="submit">上限を保存</button>
+    <button id="clear-cache" type="button">キャッシュを削除</button>
+  </fieldset>
+  <p id="cache-status" role="status"></p>
+</form>
 <script src="languages.js"></script>
 <script type="module" src="options.js"></script>
 </html>

@@ -1,4 +1,4 @@
-const cacheLimit = 64 * 1024 * 1024;
+const defaultCacheLimit = 64 * 1024 * 1024;
 const cacheTtl = 30 * 24 * 60 * 60 * 1000;
 const encoder = new TextEncoder();
 let database;
@@ -7,11 +7,11 @@ function entryBytes(key, entry) {
   return encoder.encode(key).byteLength + encoder.encode(JSON.stringify(entry)).byteLength;
 }
 
-function pruneCache(store, metadata, bytes, now) {
+function pruneCache(store, metadata, bytes, limit, now) {
   const oldest = store.index("createdAt").openCursor();
   oldest.onsuccess = () => {
     const cursor = oldest.result;
-    if (!cursor || (bytes <= cacheLimit && now - cursor.key < cacheTtl)) {
+    if (!cursor || (bytes <= limit && now - cursor.key < cacheTtl)) {
       metadata.put(bytes, "bytes");
       return;
     }
@@ -38,7 +38,7 @@ function openCache() {
       entries.onsuccess = () => {
         const cursor = entries.result;
         if (!cursor) {
-          pruneCache(store, metadata, bytes, Date.now());
+          pruneCache(store, metadata, bytes, defaultCacheLimit, Date.now());
           return;
         }
         bytes += entryBytes(cursor.primaryKey, cursor.value);
@@ -66,24 +66,58 @@ export async function readTranslation(key) {
   });
 }
 
-export async function saveTranslation(key, result) {
-  const now = Date.now();
-  const entry = { result, createdAt: now };
-  const size = entryBytes(key, entry);
-  if (size > cacheLimit) return;
+async function writeCache(write) {
   const db = await openCache();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(["translations", "metadata"], "readwrite");
     transaction.oncomplete = resolve;
     transaction.onabort = () => reject(transaction.error);
-    const store = transaction.objectStore("translations");
-    const metadata = transaction.objectStore("metadata");
+    write(transaction.objectStore("translations"), transaction.objectStore("metadata"));
+  });
+}
+
+export async function saveTranslation(key, result) {
+  const now = Date.now();
+  const entry = { result, createdAt: now };
+  const size = entryBytes(key, entry);
+  return writeCache((store, metadata) => {
+    const configured = metadata.get("limit");
     const total = metadata.get("bytes");
     const previous = store.get(key);
     previous.onsuccess = () => {
+      const limit = configured.result ?? defaultCacheLimit;
+      if (size > limit) return;
       const replacedSize = previous.result ? entryBytes(key, previous.result) : 0;
       store.put(entry, key);
-      pruneCache(store, metadata, total.result + size - replacedSize, now);
+      pruneCache(store, metadata, total.result + size - replacedSize, limit, now);
     };
+  });
+}
+
+export async function readCacheUsage() {
+  const db = await openCache();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("metadata");
+    const metadata = transaction.objectStore("metadata");
+    const bytes = metadata.get("bytes");
+    const limit = metadata.get("limit");
+    transaction.oncomplete = () => resolve({ bytes: bytes.result, limit: limit.result ?? defaultCacheLimit });
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+export async function setCacheLimit(limit) {
+  if (!Number.isSafeInteger(limit) || limit <= 0) throw new RangeError("キャッシュ上限が無効です。");
+  return writeCache((store, metadata) => {
+    metadata.put(limit, "limit");
+    const total = metadata.get("bytes");
+    total.onsuccess = () => pruneCache(store, metadata, total.result, limit, Date.now());
+  });
+}
+
+export async function clearTranslationCache() {
+  return writeCache((store, metadata) => {
+    store.clear();
+    metadata.put(0, "bytes");
   });
 }
