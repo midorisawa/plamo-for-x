@@ -20,8 +20,9 @@ let autoTranslate = false;
 let activeTranslations = 0;
 let draining = false;
 let expandedPreview;
+let glossaryRevision = 0;
 
-function requestTranslation(text, target, onPartial, postId, preview) {
+function requestTranslation(text, target, glossary, onPartial, postId, preview) {
   const id = crypto.randomUUID();
   return new Promise(resolve => {
     function finish(result) {
@@ -37,7 +38,7 @@ function requestTranslation(text, target, onPartial, postId, preview) {
     pending.set(id, finish);
     async function send() {
       try {
-        const response = await chrome.runtime.sendMessage({ type: "translate-post", id, text, target, postId, preview });
+        const response = await chrome.runtime.sendMessage({ type: "translate-post", id, text, target, glossary, postId, preview });
         if (pending.has(id) && !response?.accepted) {
           finish(response ?? { error: "翻訳を開始できませんでした。" });
         }
@@ -222,13 +223,21 @@ function mount(root) {
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "PLaMoで翻訳";
+  const glossaryButton = document.createElement("button");
+  glossaryButton.type = "button";
+  glossaryButton.textContent = "用語集";
+  glossaryButton.setAttribute("aria-haspopup", "dialog");
+  glossaryButton.addEventListener("click", event => {
+    event.stopPropagation();
+    showGlossaryPicker();
+  });
   const output = document.createElement("div");
   output.setAttribute("role", "status");
   output.lang = target;
   output.dir = "auto";
   const references = document.createElement("div");
   references.className = "sns-translator-references";
-  toolbar.append(icon, label, button);
+  toolbar.append(icon, label, button, glossaryButton);
   panel.append(toolbar, output, references);
   panel.addEventListener("click", event => {
     if (event.target.closest("a")) event.stopPropagation();
@@ -300,6 +309,7 @@ function mount(root) {
     if (!matches(post, readTarget(root))) return;
     if (translation !== null) return;
     state.attempted = true;
+    state.glossaryRevision = glossaryRevision;
     button.disabled = true;
     let profileLanguage = "";
     async function detectProfileLanguage(original) {
@@ -415,6 +425,11 @@ function mount(root) {
         return;
       }
 
+      const { terms: glossary, error } = await chrome.runtime.sendMessage({ type: "get-glossary-terms" });
+      if (error) {
+        finish({ error });
+        return;
+      }
       let text = input.text;
       let prefix = "";
       if (collapsed) {
@@ -426,7 +441,7 @@ function mount(root) {
           const source = text.slice(0, boundary);
           const separator = /\n\s*$/.test(source) ? "\n" : /^(ja|zh-)/.test(target) ? "" : " ";
           const first = await requestTranslation(
-            source.trimEnd(), target, partial => finish({ partial }), post.id, { source, separator },
+            source.trimEnd(), target, glossary, partial => finish({ partial }), post.id, { source, separator },
           );
           if (!first.text || first.truncated) {
             finish(automatic && first.busy ? { retry: true } : first);
@@ -439,7 +454,7 @@ function mount(root) {
       }
       if (prefix) finish({ partial: prefix });
       const result = text
-        ? await requestTranslation(text, target, partial => finish({ partial: prefix + partial }),
+        ? await requestTranslation(text, target, glossary, partial => finish({ partial: prefix + partial }),
           !collapsed && !isNote && !isProfile ? post.id : undefined)
         : { text: prefix.trimEnd() };
       if (automatic && result.busy) {
@@ -461,7 +476,8 @@ document.addEventListener("click", event => {
   const showMore = event.target.closest(showMoreSelector);
   if (showMore) {
     const state = states.get(showMore.closest(targetSelector));
-    expandedPreview = state?.post.id && state.panel.hasAttribute("data-show-translation") ? {
+    expandedPreview = state?.post.id && state.glossaryRevision === glossaryRevision &&
+      state.panel.hasAttribute("data-show-translation") ? {
       id: state.post.id,
       target: state.target,
       output: state.output.cloneNode(true),
@@ -512,6 +528,10 @@ chrome.storage.local.get(["targetLanguage", "sourceLanguages", "autoTranslate"])
   .catch(() => updateTargetLanguage());
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
+  if (changes.glossaries || changes.selectedGlossaryIds) {
+    glossaryRevision++;
+    expandedPreview = undefined;
+  }
   if (changes.sourceLanguages) {
     const saved = changes.sourceLanguages.newValue;
     sourceLanguages = Array.isArray(saved) ? saved : null;

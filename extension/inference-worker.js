@@ -39,7 +39,7 @@ async function prepareModel(model, mode) {
   }
 }
 
-self.onmessage = async ({ data: { text, model, target, mode } }) => {
+self.onmessage = async ({ data: { text, model, target, mode, glossary = [] } }) => {
   try {
     runtime ??= await prepareModel(model, mode);
     if (text === undefined) {
@@ -50,7 +50,9 @@ self.onmessage = async ({ data: { text, model, target, mode } }) => {
     if (typeof target !== "string" || !/^(?:[a-z]{2,3}|zh-han[st])$/.test(target)) {
       throw new Error("翻訳先の言語を設定してください。");
     }
-    const prompt = `<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input<|plamo:msg|>${text}<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>${target}<|plamo:msg|>`;
+    const terms = glossary.length ? "<|plamo:tag|>glossary" + glossary.map(({ source, target }) =>
+      `<|plamo:index|>${source}<|plamo:item|>${target}`).join("") : "";
+    const prompt = `<|plamo:tag|>dataset<|plamo:msg|>translation${terms}<|plamo:tag|>input<|plamo:msg|>${text}<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>${target}<|plamo:msg|>`;
     const space = await call("start_translation", ["string"], [prompt]);
     if (space === -2) throw new Error("投稿が長すぎるため翻訳できません。");
     if (space < 0) throw new Error("原文を処理できませんでした。");

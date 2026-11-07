@@ -1,6 +1,7 @@
 import { activeModel, defaultModel } from "./model.js";
 import { checkGpu } from "./gpu.js";
 import { readTranslation, saveTranslation } from "./translation-cache.js";
+import { glossaryLimit, validGlossaryTerm } from "./glossary.js";
 
 let worker;
 let loadedModel;
@@ -60,25 +61,30 @@ function prepare(mode, model, selectedModel) {
   return preparing;
 }
 
-async function translate(text, target, mode, model, onPartial) {
+async function translate(text, target, mode, model, glossary, onPartial) {
   if (text.includes("<|plamo:") || text.includes("\0")) {
     return { error: "原文に翻訳できない制御文字が含まれています。" };
   }
   // 事前読み込みの完了を待ち、翻訳時に指定された実行先を適用する
   if (preparing) await preparing.catch(() => {});
   await prepare(mode, model);
-  const result = await runWorker({ text, target }, onPartial);
+  const result = await runWorker({ text, target, glossary }, onPartial);
   if (result.error) resetWorker();
   else keepWorkerReady();
   return result;
 }
 
 async function infer(message, respond) {
-  const { id, tabId, documentId, text, target, mode, postId, preview } = message;
+  const { id, tabId, documentId, text, target, mode, postId, preview, glossary = [] } = message;
   function sendResult(result) {
     return chrome.runtime.sendMessage({ type: "inference-result", id, tabId, documentId, result }).catch(() => {});
   }
 
+  if (!Array.isArray(glossary) || glossary.length > glossaryLimit ||
+      glossary.some(term => !validGlossaryTerm(term?.source) || !validGlossaryTerm(term?.target))) {
+    respond({ error: "用語集の原語と訳語を確認してください。" });
+    return;
+  }
   const active = await activeModel(message.selectedModel);
   if (!active) {
     respond({ error: "拡張機能の設定でモデルを読み込んでください。" });
@@ -87,6 +93,7 @@ async function infer(message, respond) {
   const { id: modelId, source: model } = active;
   const keyParts = [model.lastModified, model.size, target];
   if (modelId !== defaultModel) keyParts.unshift(modelId);
+  if (glossary.length) keyParts.push(glossary.map(({ source, target }) => [source, target]));
   const translationKey = source => JSON.stringify([1, ...keyParts, source]);
   const previewKey = postId && JSON.stringify(["preview", ...keyParts, postId]);
   const key = translationKey(text);
@@ -123,7 +130,7 @@ async function infer(message, respond) {
       const suffixKey = translationKey(suffix);
       if (suffix) {
         const cachedSuffix = await readTranslation(suffixKey).catch(() => undefined);
-        result = cachedSuffix ?? await translate(suffix, target, mode, model,
+        result = cachedSuffix ?? await translate(suffix, target, mode, model, glossary,
           ({ partial }) => sendResult({ partial: prefix + partial }));
         if (result.text && !result.truncated && !cachedSuffix) {
           await saveTranslation(suffixKey, result).catch(() => {});
@@ -133,7 +140,7 @@ async function infer(message, respond) {
         result = { text: prefix.trimEnd() };
       }
     } else {
-      result = await translate(text, target, mode, model, sendResult);
+      result = await translate(text, target, mode, model, glossary, sendResult);
     }
     if (result.text && !result.truncated) await saveTranslation(key, result).catch(() => {});
     await rememberPreview(result);

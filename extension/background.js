@@ -1,3 +1,5 @@
+import { glossaryTerms } from "./glossary.js";
+
 const offscreenPage = "offscreen.html";
 let creating;
 let closing = Promise.resolve();
@@ -36,6 +38,23 @@ chrome.tabs.onRemoved.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (sender.tab && message.type === "open-glossary-settings") {
+    chrome.tabs.create({ url: chrome.runtime.getURL("options.html#glossary-editor") })
+      .then(() => respond({}), () => respond({ error: "設定タブを開けませんでした。" }));
+    return true;
+  }
+  if (sender.tab && (message.type === "get-glossary-terms" || message.type === "select-glossaries")) {
+    (async () => {
+      const { glossaries = [], selectedGlossaryIds = [] } =
+        await chrome.storage.local.get(["glossaries", "selectedGlossaryIds"]);
+      if (message.type === "get-glossary-terms") return { terms: glossaryTerms(glossaries, selectedGlossaryIds) };
+      const ids = glossaries.filter(({ id }) => message.ids.includes(id)).map(({ id }) => id);
+      glossaryTerms(glossaries, ids);
+      await chrome.storage.local.set({ selectedGlossaryIds: ids });
+      return {};
+    })().then(respond, error => respond({ error: error.message }));
+    return true;
+  }
   if (message.type === "get-gpu-support") {
     ensureOffscreen()
       .then(() => chrome.runtime.sendMessage({ type: "check-engine-gpu" }))
@@ -63,6 +82,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         target: message.target,
         postId: message.postId,
         preview: message.preview,
+        glossary: message.glossary,
         mode,
         selectedModel,
         tabId: sender.tab.id,

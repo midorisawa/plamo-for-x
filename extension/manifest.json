@@ -33,7 +33,7 @@
     "world": "MAIN"
   }, {
     "matches": ["https://x.com/*"],
-    "js": ["languages.js", "links.js", "content.js"],
+    "js": ["languages.js", "links.js", "glossary-picker.js", "content.js"],
     "css": ["content.css"],
     "run_at": "document_idle"
   }],

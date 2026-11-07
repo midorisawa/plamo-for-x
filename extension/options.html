@@ -48,8 +48,35 @@
       <p class="muted">Built with PLaMo · <a href="models/PLaMo-Community-License-ja.txt" target="_blank" rel="noopener">PLaMoコミュニティライセンス</a></p>
     </div>
   </section>
+  <section id="glossaries" aria-labelledby="glossary-title">
+    <h2 id="glossary-title">用語集</h2>
+      <fieldset id="glossary-selection" disabled>
+        <legend>適用する用語集</legend>
+        <div id="glossary-selection-choices"></div>
+      </fieldset>
+      <p id="glossary-selection-status" role="status"></p>
+    <a href="options.html#glossary-editor" target="_blank" rel="noopener">設定タブで用語集を編集</a>
+  </section>
   </fieldset>
   </form>
+
+  <section id="glossary-editor" aria-labelledby="glossary-editor-title">
+    <h2 id="glossary-editor-title">用語集を編集</h2>
+    <form id="glossary-form">
+      <fieldset disabled>
+        <p class="muted">新しく作るか、登録済みの用語集を選んで原語と訳語を編集します。</p>
+        <label class="field">編集する用語集<select id="glossary-list"></select></label>
+        <label class="field">用語集の名前<input id="glossary-name" type="text" maxlength="80" required></label>
+        <div id="glossary-entries"></div>
+        <div class="actions">
+          <button id="glossary-add-entry" type="button">用語を追加</button>
+          <button type="submit">用語集を保存</button>
+          <button id="glossary-delete" class="danger" type="button">用語集を削除</button>
+        </div>
+      </fieldset>
+      <p id="glossary-status" role="status"></p>
+    </form>
+  </section>
 
   <section aria-labelledby="cache-title">
     <h2 id="cache-title">翻訳キャッシュ</h2>
@@ -101,6 +128,13 @@
     <button class="download-model" type="button">ダウンロード</button>
     <button class="cancel-download" type="button" hidden>中止</button>
     <button class="remove-model danger" type="button" hidden>削除</button>
+  </div>
+</template>
+<template id="glossary-entry">
+  <div class="glossary-entry">
+    <label class="field">原語<input type="text" maxlength="100"></label>
+    <label class="field">訳語<input type="text" maxlength="100"></label>
+    <button type="button" aria-label="この用語を削除">削除</button>
   </div>
 </template>
 <dialog id="clear-cache-dialog" aria-labelledby="clear-cache-title" aria-describedby="clear-cache-description">

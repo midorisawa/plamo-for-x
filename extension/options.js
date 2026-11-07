@@ -1,14 +1,19 @@
 import { modelSource, withModelLock } from "./model.js";
 import { setupModelSettings } from "./model-settings.js";
+import { setupGlossarySettings } from "./glossary-settings.js";
+import { glossaryTerms } from "./glossary.js";
 import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translation-cache.js";
 
-setupModelSettings(chrome.extension.getViews({ type: "popup" }).includes(window));
+const popup = chrome.extension.getViews({ type: "popup" }).includes(window);
+setupModelSettings(popup);
+setupGlossarySettings(popup);
 const languageSelect = document.querySelector("#target-language");
 const settingsForm = document.querySelector("#translation-settings");
 const settingsFields = document.querySelector("#translation-fields");
 const saveButton = document.querySelector("#save-settings");
 const saveStatus = document.querySelector("#save-status");
 const modelSelect = document.querySelector("#selected-model");
+const glossaryChoices = document.querySelector("#glossary-selection-choices");
 const autoTranslate = document.querySelector("#auto-translate");
 const inferenceSelect = document.querySelector("#inference-mode");
 const browserLanguage = preferredTranslationLanguage();
@@ -107,6 +112,10 @@ function readChanges(draft) {
     JSON.stringify(value) !== JSON.stringify(savedSettings[key])));
   const model = modelSelect.selectedOptions[0];
   if (model?.value && !model.defaultSelected) changes.selectedModel = model.value;
+  const choices = [...glossaryChoices.querySelectorAll("input")];
+  if (choices.some(input => input.checked !== input.defaultChecked)) {
+    changes.selectedGlossaryIds = choices.filter(input => input.checked).map(input => input.value);
+  }
   return changes;
 }
 
@@ -123,6 +132,11 @@ settingsForm.addEventListener("submit", async event => {
   saveButton.disabled = true;
   saveStatus.textContent = "保存中…";
   try {
+    if (changes.selectedGlossaryIds) {
+      const { glossaries = [] } = await chrome.storage.local.get("glossaries");
+      changes.selectedGlossaryIds = glossaries.filter(({ id }) => changes.selectedGlossaryIds.includes(id)).map(({ id }) => id);
+      glossaryTerms(glossaries, changes.selectedGlossaryIds);
+    }
     if (changes.selectedModel) {
       await withModelLock(async () => {
         if (!await modelSource(changes.selectedModel)) throw new Error("選択したモデルは削除されました。");
@@ -132,6 +146,11 @@ settingsForm.addEventListener("submit", async event => {
       modelSelect.value = changes.selectedModel;
     } else if (Object.keys(changes).length) {
       await chrome.storage.local.set(changes);
+    }
+    if (changes.selectedGlossaryIds) {
+      for (const input of glossaryChoices.querySelectorAll("input")) {
+        input.defaultChecked = input.checked = changes.selectedGlossaryIds.includes(input.value);
+      }
     }
     savedSettings = draft;
     saveStatus.textContent = "設定を保存しました。";

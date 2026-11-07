@@ -55,9 +55,9 @@ main {
 section { padding: 1.1rem 1.25rem; }
 section + section { border-top: 1px solid var(--border); }
 #translation-settings + section { border-top: 1px solid var(--border); }
-.save-bar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .65rem 1.25rem; border-top: 1px solid var(--border); background: var(--surface); border-radius: 0 0 18px 18px; }
-.popup .save-bar { position: sticky; bottom: 0; z-index: 1; border-radius: 0; }
-.popup body { scroll-padding-block: 65px; }
+.save-bar { position: sticky; bottom: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .65rem 1.25rem; border-top: 1px solid var(--border); background: var(--surface); border-radius: 0 0 18px 18px; }
+.popup .save-bar { border-radius: 0; }
+:root, .popup body { scroll-padding-bottom: 65px; }
 #save-settings { margin-inline-start: auto; min-width: 5rem; }
 h1 { margin: 0; font-size: 1.25rem; }
 h2 { margin: 0 0 .75rem; font-size: 1.05rem; }
@@ -67,7 +67,7 @@ p { margin: .35rem 0; }
 [role="status"]:empty { margin: 0; }
 
 button, select, input { font: inherit; color: inherit; }
-button, select, input[type="number"], input[type="file"] {
+button, select, input[type="number"], input[type="file"], input[type="text"] {
   min-height: 42px;
   max-width: 100%;
   padding: .45rem .65rem;
@@ -119,6 +119,17 @@ details > :not(summary) { margin: .75rem; }
 meter { width: 100%; }
 .actions { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
 #cache-limit { width: 7rem; }
+#glossary-selection-choices { overflow-wrap: anywhere; }
+#glossary-selection-choices:not(:empty) { margin-bottom: .75rem; }
+#glossaries legend { padding: 0; font-weight: 600; }
+#glossary-form > fieldset { display: grid; gap: .65rem; }
+#glossary-entries { display: grid; gap: .5rem; }
+.glossary-entry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: .5rem;
+}
 
 dialog {
   width: min(26rem, calc(100% - 2rem));
