@@ -51,6 +51,7 @@ export function setupGlossarySettings(popup) {
   const fields = form.querySelector("fieldset");
   const status = document.querySelector("#glossary-status");
   let glossaries = [];
+  let editing;
 
   function addEntry(entry = {}) {
     const row = template.content.firstElementChild.cloneNode(true);
@@ -69,6 +70,7 @@ export function setupGlossarySettings(popup) {
 
   function openEditor(id) {
     const glossary = glossaries.find(item => item.id === id);
+    editing = glossary;
     select.replaceChildren(new Option("新しい用語集", ""),
       ...glossaries.map(item => new Option(item.name, item.id)));
     select.value = glossary?.id ?? "";
@@ -80,12 +82,28 @@ export function setupGlossarySettings(popup) {
   }
 
   async function update(id, entry) {
+    const original = editing;
     fields.disabled = true;
     status.textContent = "";
     try {
       glossaries = await withGlossaryLock(async () => {
         const { glossaries = [], selectedGlossaryIds = [] } =
           await chrome.storage.local.get(["glossaries", "selectedGlossaryIds"]);
+        const current = glossaries.find(item => item.id === id);
+        if (original && (!current || (!entry && JSON.stringify(current) !== JSON.stringify(original)))) {
+          throw new Error("別の画面で用語集が更新されました。最新の内容を開いてください。");
+        }
+        if (original && current && entry) {
+          for (const key of ["name", "entries"]) {
+            const before = JSON.stringify(original[key]);
+            const latest = JSON.stringify(current[key]);
+            const draft = JSON.stringify(entry[key]);
+            if (draft === before) entry[key] = current[key];
+            else if (latest !== before && latest !== draft) {
+              throw new Error("別の画面で同じ項目が更新されました。最新の内容を開いてください。");
+            }
+          }
+        }
         const next = glossaries.filter(item => item.id !== id);
         if (entry) next.push(entry);
         if (entry) glossaryTerms(next, selectedGlossaryIds);
@@ -95,6 +113,8 @@ export function setupGlossarySettings(popup) {
       openEditor(entry?.id);
       status.textContent = entry ? "用語集を保存しました。" : "用語集を削除しました。";
     } catch (error) {
+      const latest = await chrome.storage.local.get("glossaries").catch(() => ({}));
+      if (latest.glossaries) glossaries = latest.glossaries;
       status.textContent = `用語集を更新できませんでした。 ${error.message}`;
     } finally {
       fields.disabled = false;

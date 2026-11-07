@@ -76,7 +76,9 @@ async function translate(text, target, mode, model, glossary, onPartial) {
 async function infer(message, respond) {
   const { id, tabId, documentId, text, target, mode, postId, preview, glossary = [] } = message;
   function sendResult(result) {
-    return chrome.runtime.sendMessage({ type: "inference-result", id, tabId, documentId, result }).catch(() => {});
+    return chrome.runtime.sendMessage({
+      type: "inference-result", id, tabId, documentId, result: { ...result, cacheRevision: revision },
+    }).catch(() => {});
   }
 
   if (!Array.isArray(glossary) || glossary.length > glossaryLimit ||
@@ -84,9 +86,10 @@ async function infer(message, respond) {
     respond({ error: "用語集の原語と訳語を確認してください。" });
     return;
   }
-  const revision = await readCacheRevision().catch(() => undefined);
+  const revision = message.cacheRevision === undefined
+    ? await readCacheRevision().catch(() => null) : message.cacheRevision;
   async function save(key, result) {
-    if (revision !== undefined) await saveTranslation(key, result, revision).catch(() => {});
+    if (revision !== null) await saveTranslation(key, result, revision).catch(() => {});
   }
   const active = await activeModel(message.selectedModel);
   if (!active) {

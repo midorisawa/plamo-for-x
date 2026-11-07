@@ -1,4 +1,4 @@
-import { activeModel, defaultModel, deleteModel, downloadModel, importModel, models, modelSource, withModelLock } from "./model.js";
+import { activeModel, cleanStagedModels, defaultModel, deleteModel, downloadModel, importModel, models, modelSource, withModelLock } from "./model.js";
 
 export function setupModelSettings() {
   const select = document.querySelector("#selected-model");
@@ -135,5 +135,6 @@ export function setupModelSettings() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && !busy) refresh();
   });
+  cleanStagedModels().catch(error => console.warn("モデルの一時ファイルを削除できませんでした。", error));
   refresh();
 }

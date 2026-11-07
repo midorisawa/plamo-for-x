@@ -121,18 +121,39 @@ sourceLanguagesField.addEventListener("change", event => {
 });
 
 let savedSettings;
-try {
+let settingsRefresh = 0;
+const sameSetting = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+async function refreshSettings() {
+  const refresh = ++settingsRefresh;
   const { targetLanguage, sourceLanguages, inferenceMode, autoTranslate: automatic } =
     await chrome.storage.local.get(["targetLanguage", "sourceLanguages", "inferenceMode", "autoTranslate"]);
-  languageSelect.value = translationLanguage(targetLanguage);
-  for (const checkbox of sourceInputs) checkbox.checked = sourceLanguages?.includes(checkbox.value) ?? true;
-  updateSourceChoices();
   const explicitMode = inferenceMode === "gpu" || inferenceMode === "cpu";
   const gpu = (!explicitMode || typeof automatic !== "boolean") &&
     await chrome.runtime.sendMessage({ type: "get-gpu-support" }).catch(() => false) === true;
-  inferenceSelect.value = explicitMode ? inferenceMode : gpu ? "gpu" : "cpu";
-  autoTranslate.checked = typeof automatic === "boolean" ? automatic : gpu;
-  savedSettings = readSettings();
+  if (refresh !== settingsRefresh) return;
+  const selectedSources = sourceInputs.map(input => input.value)
+    .filter(code => sourceLanguages?.includes(code) ?? true);
+  const next = {
+    targetLanguage: translationLanguage(targetLanguage),
+    sourceLanguages: selectedSources.length === sourceInputs.length ? null : selectedSources,
+    inferenceMode: explicitMode ? inferenceMode : gpu ? "gpu" : "cpu",
+    autoTranslate: typeof automatic === "boolean" ? automatic : gpu,
+  };
+  const draft = savedSettings && readSettings();
+  const unchanged = key => !draft || sameSetting(draft[key], savedSettings[key]);
+  if (unchanged("targetLanguage")) languageSelect.value = next.targetLanguage;
+  if (unchanged("sourceLanguages")) {
+    for (const checkbox of sourceInputs) checkbox.checked = selectedSources.includes(checkbox.value);
+  }
+  if (unchanged("inferenceMode")) inferenceSelect.value = next.inferenceMode;
+  if (unchanged("autoTranslate")) autoTranslate.checked = next.autoTranslate;
+  savedSettings = next;
+  updateSourceChoices();
+}
+
+try {
+  await refreshSettings();
   for (const control of [languageSelect, sourceLanguagesField, inferenceSelect, autoTranslate]) control.disabled = false;
   settingsFields.disabled = false;
   saveButton.disabled = false;
@@ -143,7 +164,7 @@ try {
 
 function readChanges(draft) {
   const changes = Object.fromEntries(Object.entries(draft).filter(([key, value]) =>
-    JSON.stringify(value) !== JSON.stringify(savedSettings[key])));
+    !sameSetting(value, savedSettings[key])));
   const model = modelSelect.selectedOptions[0];
   if (model?.value && !model.defaultSelected) changes.selectedModel = model.value;
   const choices = [...glossaryChoices.querySelectorAll("input")];
@@ -153,8 +174,16 @@ function readChanges(draft) {
   return changes;
 }
 
-settingsForm.addEventListener("change", () => {
+function showUnsavedChanges() {
   saveStatus.textContent = Object.keys(readChanges(readSettings())).length ? "未保存の変更があります。" : "";
+}
+
+settingsForm.addEventListener("change", showUnsavedChanges);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !savedSettings || !Object.keys(savedSettings).some(key => key in changes)) return;
+  refreshSettings().then(() => {
+    if (!saveButton.disabled) showUnsavedChanges();
+  }).catch(() => {});
 });
 
 async function saveChanges(changes) {
@@ -193,7 +222,10 @@ settingsForm.addEventListener("submit", async event => {
         input.defaultChecked = input.checked = changes.selectedGlossaryIds.includes(input.value);
       }
     }
-    savedSettings = draft;
+    for (const key of Object.keys(draft)) {
+      if (Object.hasOwn(changes, key)) savedSettings[key] = draft[key];
+    }
+    await refreshSettings().catch(() => {});
     saveStatus.textContent = "設定を保存しました。";
   } catch (error) {
     saveStatus.textContent = `設定を保存できませんでした。 ${error.message}`;

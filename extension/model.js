@@ -7,6 +7,7 @@ export const models = [
 
 export const defaultModel = models[0].id;
 const modelFilename = id => `plamo-3-translate-${id}-Q4_K_M.gguf`;
+const stagedFilename = id => `${modelFilename(id)}.download`;
 export const withModelLock = action => navigator.locks.request("sns-translator-models", action);
 
 async function modelHandle(id, create) {
@@ -78,7 +79,7 @@ export async function downloadModel(id, progress, signal) {
     },
   }));
   const directory = await navigator.storage.getDirectory();
-  const stagedName = `${modelFilename(id)}.download`;
+  const stagedName = stagedFilename(id);
   const staged = await directory.getFileHandle(stagedName, { create: true });
   try {
     await stream.pipeTo(await staged.createWritable(), { signal });
@@ -91,10 +92,22 @@ export async function downloadModel(id, progress, signal) {
   }
 }
 
-export async function deleteModel(id) {
+async function removeModelFile(name) {
   try {
-    await (await navigator.storage.getDirectory()).removeEntry(modelFilename(id));
+    await (await navigator.storage.getDirectory()).removeEntry(name);
   } catch (error) {
     if (error.name !== "NotFoundError") throw error;
   }
+}
+
+export function deleteModel(id) {
+  return removeModelFile(modelFilename(id));
+}
+
+export function cleanStagedModels() {
+  return withModelLock(async () => {
+    for (const { id, bundled } of models) {
+      if (!bundled) await removeModelFile(stagedFilename(id));
+    }
+  });
 }

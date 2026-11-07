@@ -24,7 +24,7 @@ let draining = false;
 let expandedPreview;
 let glossaryRevision = 0;
 
-function requestTranslation(text, target, glossary, onPartial, postId, preview) {
+function requestTranslation(text, target, glossary, onPartial, postId, preview, cacheRevision) {
   if (!translationEnabled) return Promise.resolve({ error: "投稿の翻訳は無効です。" });
   const id = crypto.randomUUID();
   return new Promise(resolve => {
@@ -42,7 +42,9 @@ function requestTranslation(text, target, glossary, onPartial, postId, preview) 
     pending.set(id, finish);
     async function send() {
       try {
-        const response = await chrome.runtime.sendMessage({ type: "translate-post", id, text, target, glossary, postId, preview });
+        const response = await chrome.runtime.sendMessage({
+          type: "translate-post", id, text, target, glossary, postId, preview, cacheRevision,
+        });
         if (pending.has(id) && !response?.accepted) {
           finish(response ?? { error: "翻訳を開始できませんでした。" });
         }
@@ -160,11 +162,15 @@ function readTarget(root) {
     shortened: source?.shortened };
 }
 
-function matches(left, right) {
-  return right && left.body === right.body && left.text === right.text && left.id === right.id &&
+function matchesContent(left, right) {
+  return right && left.text === right.text && left.id === right.id &&
     left.language === right.language && left.original === right.original &&
     left.native?.translated === right.native?.translated &&
     left.hrefs.length === right.hrefs.length && left.hrefs.every((href, index) => href === right.hrefs[index]);
+}
+
+function matches(left, right) {
+  return left.body === right?.body && matchesContent(left, right);
 }
 
 function switchNativeTranslation(root, post, translated) {
@@ -445,6 +451,7 @@ function mount(root) {
       }
       let text = input.text;
       let prefix = "";
+      let cacheRevision;
       if (collapsed) {
         const segmenter = new Intl.Segmenter(translationLanguage(post.language) || undefined, { granularity: "sentence" });
         const sentences = [...segmenter.segment(text)];
@@ -461,6 +468,7 @@ function mount(root) {
             return automatic && first.busy;
           }
           prefix = first.text + separator;
+          cacheRevision = first.cacheRevision;
           text = text.slice(boundary).trim();
           if (!panel.isConnected || !matches(post, readTarget(root))) return;
         }
@@ -468,7 +476,7 @@ function mount(root) {
       if (prefix) finish({ partial: prefix });
       const result = text
         ? await requestTranslation(text, target, glossary, partial => finish({ partial: prefix + partial }),
-          !collapsed && !isNote && !isProfile ? post.id : undefined)
+          !collapsed && !isNote && !isProfile ? post.id : undefined, undefined, cacheRevision)
         : { text: prefix.trimEnd() };
       if (automatic && result.busy) {
         finish({ retry: true });
@@ -552,8 +560,9 @@ function setTranslationEnabled(enabled) {
   for (const root of document.querySelectorAll(targetSelector)) {
     const original = nativeRestorations.get(root);
     nativeRestorations.delete(root);
-    if (original && matches(original, readTarget(root))) {
-      switchNativeTranslation(root, original, true);
+    const current = original && readTarget(root);
+    if (current?.native?.button && matchesContent(original, current)) {
+      switchNativeTranslation(root, current, true);
     }
   }
   document.querySelectorAll(".sns-translator").forEach(panel => panel.remove());

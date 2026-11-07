@@ -123,6 +123,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         target: message.target,
         postId: message.postId,
         preview: message.preview,
+        cacheRevision: message.cacheRevision,
         glossary: message.glossary,
         mode,
         selectedModel,
