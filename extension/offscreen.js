@@ -3,6 +3,13 @@ import { checkGpu } from "./gpu.js";
 import { readTranslation, saveTranslation } from "./translation-cache.js";
 import { glossaryLimit, validGlossaryTerm } from "./glossary.js";
 
+const colorScheme = matchMedia("(prefers-color-scheme: dark)");
+function updateToolbarIcon() {
+  chrome.runtime.sendMessage({ type: "toolbar-color-scheme", dark: colorScheme.matches }).catch(() => {});
+}
+colorScheme.addEventListener("change", updateToolbarIcon);
+updateToolbarIcon();
+
 let worker;
 let loadedModel;
 let workerMode;
@@ -155,6 +162,11 @@ async function infer(message, respond) {
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.tab) return;
+  if (message.type === "release-engine") {
+    if (!busy && !preparing) resetWorker();
+    respond();
+    return;
+  }
   if (message.type === "check-engine-gpu") {
     gpuAvailable().then(respond);
     return true;

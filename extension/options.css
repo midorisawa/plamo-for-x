@@ -1,15 +1,16 @@
 :root {
   color-scheme: light dark;
-  --canvas: #f3f6f9;
+  --canvas: #f5f5f5;
   --surface: #fff;
-  --subtle: #f4f7fa;
-  --border: #d7e0e9;
-  --text: #14243a;
-  --muted: #4f6074;
-  --accent: #2056aa;
-  --accent-soft: #e9f1ff;
-  --primary: #2056aa;
-  --primary-hover: #174687;
+  --subtle: #f7f7f7;
+  --border: #dedede;
+  --text: #1a1a1a;
+  --muted: #595959;
+  --accent: #333;
+  --accent-soft: #ebebeb;
+  --primary: #333;
+  --primary-hover: #1a1a1a;
+  --on-primary: #fff;
   --danger: #a22539;
   background: var(--canvas);
   color: var(--text);
@@ -19,16 +20,17 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --canvas: #101721;
-    --surface: #182332;
-    --subtle: #202e40;
-    --border: #3b4c62;
-    --text: #edf3fc;
-    --muted: #b3c2d5;
-    --accent: #a7caff;
-    --accent-soft: #253b59;
-    --primary: #245caf;
-    --primary-hover: #2869c2;
+    --canvas: #151515;
+    --surface: #202020;
+    --subtle: #292929;
+    --border: #424242;
+    --text: #f2f2f2;
+    --muted: #bcbcbc;
+    --accent: #e0e0e0;
+    --accent-soft: #333;
+    --primary: #e5e5e5;
+    --primary-hover: #fff;
+    --on-primary: #171717;
     --danger: #ffacb7;
   }
 }
@@ -48,7 +50,13 @@ body { margin: 0; }
 }
 
 .brand { display: flex; align-items: center; gap: .65rem; line-height: 1.35; }
-.brand img { flex: none; }
+.brand-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  background: currentColor;
+  mask: url("icons/local-translator.svg") center / contain no-repeat;
+}
 small { display: block; color: var(--muted); font-size: .85rem; }
 .brand small { margin-top: .15rem; }
 
@@ -113,7 +121,7 @@ button:disabled, select:disabled, input:disabled { opacity: .6; cursor: default;
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 a { color: var(--accent); text-underline-offset: .18em; }
 .button-link { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none; font-weight: 650; }
-.primary, .primary:not(:disabled):hover { border-color: transparent; color: #fff; font-weight: 650; }
+.primary, .primary:not(:disabled):hover { border-color: transparent; color: var(--on-primary); font-weight: 650; }
 .primary { background: var(--primary); }
 .primary:not(:disabled):hover { background: var(--primary-hover); }
 .danger { color: var(--danger); }
@@ -152,7 +160,7 @@ input[type="checkbox"] { flex: none; width: 1.1rem; height: 1.1rem; margin: .17r
 }
 
 .toggle-row input:checked { border-color: var(--primary); background: var(--primary); }
-.toggle-row input:checked::before { background: #fff; transform: translateX(1.08rem); }
+.toggle-row input:checked::before { background: var(--on-primary); transform: translateX(1.08rem); }
 
 @media (forced-colors: active) {
   .toggle-row input { appearance: auto; width: 1.1rem; height: 1.1rem; }

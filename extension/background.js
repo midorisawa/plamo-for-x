@@ -2,7 +2,6 @@ import { glossaryTerms } from "./glossary.js";
 
 const offscreenPage = "offscreen.html";
 let creating;
-let closing = Promise.resolve();
 
 function offscreenContexts() {
   return chrome.runtime.getContexts({
@@ -14,30 +13,43 @@ function offscreenContexts() {
 async function ensureOffscreen() {
   if (!creating) {
     creating = (async () => {
-      await closing;
       const contexts = await offscreenContexts();
       if (contexts.length) return;
       await chrome.offscreen.createDocument({
         url: offscreenPage,
         reasons: ["WORKERS"],
-        justification: "PLaMo 3 Translateのローカル推論Workerを実行する",
+        justification: "ローカル推論Workerを実行し、配色に合わせてツールバーアイコンを切り替える",
       });
     })().finally(() => { creating = undefined; });
   }
   await creating;
 }
 
-chrome.tabs.onRemoved.addListener(() => {
-  const pendingCreation = creating;
-  closing = closing.then(async () => {
-    await pendingCreation?.catch(() => {});
+function startThemeObserver() {
+  ensureOffscreen().catch(error => console.warn("アイコンの配色を確認できませんでした。", error));
+}
+
+chrome.runtime.onInstalled.addListener(startThemeObserver);
+chrome.runtime.onStartup.addListener(startThemeObserver);
+
+chrome.tabs.onRemoved.addListener(async () => {
+  try {
     if (!(await offscreenContexts()).length) return;
     const tabs = await chrome.tabs.query({ url: "https://x.com/*" });
-    if (!tabs.length) await chrome.offscreen.closeDocument();
-  }).catch(error => console.warn("翻訳エンジンを終了できませんでした。", error));
+    if (!tabs.length) await chrome.runtime.sendMessage({ type: "release-engine" });
+  } catch (error) {
+    console.warn("翻訳エンジンを終了できませんでした。", error);
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message.type === "toolbar-color-scheme" && sender.url === chrome.runtime.getURL(offscreenPage)) {
+    const theme = message.dark ? "dark" : "light";
+    chrome.action.setIcon({
+      path: { 16: `icons/toolbar-${theme}-16.png`, 32: `icons/toolbar-${theme}-32.png` },
+    }).then(() => respond(true), () => respond(false));
+    return true;
+  }
   if (sender.tab && message.type === "get-glossary-terms") {
     (async () => {
       const { glossaries = [], selectedGlossaryIds = [] } =
