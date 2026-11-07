@@ -1,9 +1,11 @@
 const postSelector = 'article[data-testid="tweet"]';
 const textSelector = '[data-testid="tweetText"]';
 const noteSelector = '[data-testid="birdwatch-pivot"]';
+const bioSelector = '[data-testid="UserDescription"]';
+const profileSelector = `main div:has(> div > ${bioSelector})`;
 const quoteSelector = `${postSelector} div[role="link"]:has([data-testid="User-Name"])`;
 const showMoreSelector = '[data-testid="tweet-text-show-more-link"]';
-const targetSelector = `${postSelector}, ${noteSelector}, ${quoteSelector}`;
+const targetSelector = `${postSelector}, ${noteSelector}, ${quoteSelector}, ${profileSelector}`;
 const iconUrl = chrome.runtime.getURL("icons/local-translator.svg");
 const states = new WeakMap();
 const originalLanguages = new WeakMap();
@@ -114,7 +116,7 @@ function nativeTranslationControl(body, root) {
   for (let block = body; block && block !== root; block = block.parentElement) {
     const row = block.previousElementSibling;
     const candidate = row?.matches(".sns-translator") ? row.previousElementSibling : row;
-    if (!candidate || candidate.querySelector(textSelector)) continue;
+    if (!candidate || candidate.querySelector(`${textSelector}, ${bioSelector}`)) continue;
     const button = [...candidate.querySelectorAll("button")].find(control =>
       /^(原文を表示|Show original|翻訳を表示|Show translation)$/i.test(control.textContent.trim()));
     if (button) return { button, row: candidate, translated: /^(原文を表示|Show original)$/i.test(button.textContent.trim()) };
@@ -129,7 +131,9 @@ function readPostId(root) {
 
 function readTarget(root) {
   const isNote = root.matches(noteSelector);
-  const body = isNote ? root.querySelector(":scope > div[dir]") : [...root.querySelectorAll(textSelector)]
+  const isProfile = root.matches(profileSelector);
+  const body = isProfile ? root.querySelector(`:scope > div > ${bioSelector}`)
+    : isNote ? root.querySelector(":scope > div[dir]") : [...root.querySelectorAll(textSelector)]
     .find(node => node.closest(targetSelector) === root);
   const text = body?.textContent.trim();
   if (!text) return null;
@@ -144,7 +148,7 @@ function readTarget(root) {
   const row = previous?.matches(".sns-translator") ? previous.previousElementSibling : previous;
   const grokRow = isQuote && !native && row?.querySelector('svg[viewBox="0 0 33 32"] + span') ? row : null;
   if (grokRow && !source) return null;
-  const id = source?.id ?? readPostId(isNote ? article : root);
+  const id = isProfile ? location.pathname : source?.id ?? readPostId(isNote ? article : root);
   const hrefs = [...body.querySelectorAll("a[href]")].map(anchor => anchor.href);
   const original = grokRow ? source.body : null;
   return { body, text, id, language: original?.lang ?? body.lang, native, hrefs, grokRow, original,
@@ -190,10 +194,11 @@ function mount(root) {
   const previous = states.get(root);
   if (previous?.revealing) return;
   const isNote = root.matches(noteSelector);
-  const collapsed = !isNote && (post?.shortened || [...root.querySelectorAll(showMoreSelector)]
+  const isProfile = root.matches(profileSelector);
+  const collapsed = !isNote && !isProfile && (post?.shortened || [...root.querySelectorAll(showMoreSelector)]
     .some(control => control.closest(targetSelector) === root));
   const known = originalLanguages.get(root);
-  const source = post?.native?.translated
+  const source = post?.native?.translated || (isProfile && !post?.language)
     ? (known?.id === post.id && known?.text === post.text ? known.language : null)
     : translationLanguage(post?.language);
   if (post && canTranslate(source, target) && previous?.target === target &&
@@ -236,7 +241,7 @@ function mount(root) {
   button.addEventListener("pointerenter", warmTranslation);
   let translation = null;
   let links = [];
-  const expansion = !collapsed && !isNote && expandedPreview?.id === post.id && expandedPreview?.target === target
+  const expansion = !collapsed && !isNote && !isProfile && expandedPreview?.id === post.id && expandedPreview?.target === target
     ? expandedPreview : undefined;
   let keepingPreview = Boolean(expansion);
   if (expansion) {
@@ -296,6 +301,12 @@ function mount(root) {
     if (translation !== null) return;
     state.attempted = true;
     button.disabled = true;
+    let profileLanguage = "";
+    async function detectProfileLanguage(original) {
+      if (original.language) return translationLanguage(original.language);
+      const detected = await chrome.i18n.detectLanguage(original.text).catch(() => null);
+      return translationLanguage(detected?.languages[0]?.language);
+    }
     if (!keepingPreview) output.textContent = "";
     if (post.native?.translated) {
       const grok = post.body.cloneNode(true);
@@ -316,7 +327,8 @@ function mount(root) {
         if (target !== targetLanguage || !matches(post, readTarget(root)) || !panel.isConnected) mount(root);
         return;
       }
-      const language = translationLanguage(original.language);
+      const language = isProfile ? await detectProfileLanguage(original) : translationLanguage(original.language);
+      if (isProfile) profileLanguage = language;
       originalLanguages.set(root, { id: post.id, text: post.text, language });
       post = state.post = original;
       post.body.before(panel);
@@ -328,8 +340,16 @@ function mount(root) {
       }
       state.revealing = false;
       if (!automatic) button.focus({ preventScroll: true });
+    } else if (isProfile) {
+      profileLanguage = await detectProfileLanguage(post);
+      if (!panel.isConnected || !matches(post, readTarget(root))) return;
+      originalLanguages.set(root, { id: post.id, text: post.text, language: profileLanguage });
+      if (!canTranslate(profileLanguage, target)) {
+        mount(root);
+        return;
+      }
     }
-    if (post.native?.row === panel.previousElementSibling) {
+    if (post.native && (isProfile || post.native.row === panel.previousElementSibling)) {
       post.native.row.classList.add("sns-translator-native-row");
     }
     function formatTranslation() {
@@ -339,7 +359,8 @@ function mount(root) {
       const language = new Intl.DisplayNames(["ja"], { type: "language", fallback: "none" });
       let source;
       try {
-        if (post.language && post.language !== "und") source = language.of(post.language);
+        const tag = profileLanguage || post.language;
+        if (tag && tag !== "und") source = language.of(tag);
       } catch {
         // 言語タグが不正な場合はモデル名だけを表示する
       }
@@ -419,7 +440,7 @@ function mount(root) {
       if (prefix) finish({ partial: prefix });
       const result = text
         ? await requestTranslation(text, target, partial => finish({ partial: prefix + partial }),
-          !collapsed && !isNote ? post.id : undefined)
+          !collapsed && !isNote && !isProfile ? post.id : undefined)
         : { text: prefix.trimEnd() };
       if (automatic && result.busy) {
         finish({ retry: true });

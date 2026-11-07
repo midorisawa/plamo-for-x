@@ -70,7 +70,9 @@
 }
 
 .sns-translator:is([data-show-translation], [data-keep-grok], [data-show-quote-original]) + [data-testid="tweetText"],
+.sns-translator:is([data-show-translation], [data-keep-grok]) + [data-testid="UserDescription"],
 [data-testid="birdwatch-pivot"] > .sns-translator:is([data-show-translation], [data-keep-grok]) + div[dir],
+.sns-translator-native-row:has(+ div > .sns-translator:is([data-show-translation], [data-keep-grok]) + [data-testid="UserDescription"]),
 .sns-translator-native-row:has(+ .sns-translator:is([data-show-translation], [data-keep-grok], [data-show-quote-original])) {
   display: none !important;
 }
