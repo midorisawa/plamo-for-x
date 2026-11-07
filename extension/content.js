@@ -6,8 +6,41 @@ const iconUrl = chrome.runtime.getURL("icons/local-translator.svg");
 const states = new WeakMap();
 const originalLanguages = new WeakMap();
 const pending = new Map();
+const autoQueue = new Set();
 let lastWarmup = -Infinity;
 let targetLanguage = "";
+let autoTranslate = false;
+let activeTranslations = 0;
+let draining = false;
+
+async function drainAutoQueue() {
+  if (draining || !autoTranslate || document.visibilityState !== "visible") return;
+  draining = true;
+  try {
+    while (autoTranslate && document.visibilityState === "visible" && !activeTranslations && autoQueue.size) {
+      const state = autoQueue.values().next().value;
+      if (state.panel.isConnected && !state.attempted && await state.translate(true)) {
+        // 別のタブの翻訳が終わるまで、同じ投稿を先頭に残す
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        autoQueue.delete(state);
+      }
+    }
+  } finally {
+    draining = false;
+  }
+}
+
+function updateAutoTranslate(enabled) {
+  autoTranslate = enabled === true;
+  autoQueue.clear();
+  if (!autoTranslate) return;
+  for (const root of document.querySelectorAll(targetSelector)) {
+    const state = states.get(root);
+    if (state && !state.attempted) autoQueue.add(state);
+  }
+  drainAutoQueue();
+}
 
 async function warmTranslation() {
   if (document.visibilityState !== "visible" || performance.now() - lastWarmup < 30000) return;
@@ -87,6 +120,7 @@ function mount(root) {
   if (post && target && source !== target && previous?.target === target &&
       matches(previous.post, post) && previous.panel.isConnected) return;
   previous?.panel.remove();
+  autoQueue.delete(previous);
   states.delete(root);
   if (!post || !target || source === target) return;
 
@@ -116,7 +150,7 @@ function mount(root) {
     if (event.target.closest("a")) event.stopPropagation();
   });
   post.body.before(panel);
-  const state = { post, panel, target };
+  const state = { post, panel, target, translate: runTranslation };
   states.set(root, state);
   warmTranslation();
   button.addEventListener("pointerenter", warmTranslation);
@@ -131,13 +165,33 @@ function mount(root) {
     panel.toggleAttribute("data-show-translation", show);
   }
 
-  button.addEventListener("click", async event => {
+  button.addEventListener("click", event => {
     event.stopPropagation();
+    runTranslation(false);
+  });
+  if (autoTranslate) {
+    autoQueue.add(state);
+    drainAutoQueue();
+  }
+
+  async function runTranslation(automatic) {
+    if (button.disabled) return;
+    activeTranslations++;
+    try {
+      return await translate(automatic);
+    } finally {
+      activeTranslations--;
+      drainAutoQueue();
+    }
+  }
+
+  async function translate(automatic) {
     if (!matches(post, readTarget(root))) return;
     if (translation !== null) {
       showTranslation(!panel.hasAttribute("data-show-translation"));
       return;
     }
+    state.attempted = true;
     button.disabled = true;
     output.textContent = "";
     if (post.native?.translated) {
@@ -170,12 +224,14 @@ function mount(root) {
         return;
       }
       state.revealing = false;
-      button.focus({ preventScroll: true });
+      if (!automatic) button.focus({ preventScroll: true });
     }
     if (post.native?.row === panel.previousElementSibling) {
       post.native.row.classList.add("sns-translator-native-row");
     }
     const id = crypto.randomUUID();
+    let complete;
+    const completed = new Promise(resolve => { complete = resolve; });
     function formatTranslation() {
       const style = getComputedStyle(post.body);
       output.style.font = style.font;
@@ -194,8 +250,14 @@ function mount(root) {
       if (!partial) {
         clearTimeout(timer);
         pending.delete(id);
+        complete(result.retry === true);
       }
       if (!panel.isConnected || !matches(post, readTarget(root))) return;
+      if (result.retry) {
+        state.attempted = false;
+        button.disabled = false;
+        return;
+      }
       if (!result.error && panel.hasAttribute("data-keep-grok")) {
         panel.querySelector(".sns-translator-grok")?.remove();
         panel.removeAttribute("data-keep-grok");
@@ -232,14 +294,22 @@ function mount(root) {
       references.replaceChildren();
       if (links.length && !input.hasProse) {
         finish({ text: input.text });
-        return;
+      } else {
+        chrome.runtime.sendMessage({ type: "translate-post", id, text: input.text, target })
+          .then(response => {
+            if (!pending.has(id) || response?.accepted) return;
+            if (automatic && response?.busy) finish({ retry: true });
+            else finish({ error: response?.error ?? "翻訳を開始できませんでした。" });
+          })
+          .catch(() => {
+            if (pending.has(id)) finish({ error: "拡張機能に接続できませんでした。ページを再読み込みしてください。" });
+          });
       }
-      const response = await chrome.runtime.sendMessage({ type: "translate-post", id, text: input.text, target });
-      if (!response?.accepted) finish({ error: response?.error ?? "翻訳を開始できませんでした。" });
     } catch {
       finish({ error: "拡張機能に接続できませんでした。ページを再読み込みしてください。" });
     }
-  });
+    return completed;
+  }
 }
 
 chrome.runtime.onMessage.addListener(message => {
@@ -253,14 +323,19 @@ function updateTargetLanguage(saved) {
   document.querySelectorAll(targetSelector).forEach(mount);
 }
 
-chrome.storage.local.get("targetLanguage")
-  .then(settings => updateTargetLanguage(settings.targetLanguage))
+chrome.storage.local.get(["targetLanguage", "autoTranslate"])
+  .then(settings => {
+    updateTargetLanguage(settings.targetLanguage);
+    updateAutoTranslate(settings.autoTranslate);
+  })
   .catch(() => updateTargetLanguage());
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.targetLanguage) updateTargetLanguage(changes.targetLanguage.newValue);
+  if (area === "local" && changes.autoTranslate) updateAutoTranslate(changes.autoTranslate.newValue);
 });
 document.addEventListener("visibilitychange", () => {
   if (document.querySelector(".sns-translator")) warmTranslation();
+  drainAutoQueue();
 });
 new MutationObserver(records => {
   const targets = new Set();

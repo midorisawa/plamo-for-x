@@ -1,6 +1,6 @@
 import { importModel, savedModel } from "./model.js";
 
-const input = document.querySelector("input");
+const input = document.querySelector('input[type="file"]');
 const status = document.querySelector("#status");
 const languageSelect = document.querySelector("#target-language");
 const languageStatus = document.querySelector("#language-status");
@@ -56,6 +56,29 @@ try {
   });
 } catch {
   inferenceStatus.textContent = "翻訳の実行先を読み込めませんでした。";
+}
+
+const autoTranslate = document.querySelector("#auto-translate");
+const autoTranslateStatus = document.querySelector("#auto-translate-status");
+try {
+  const settings = await chrome.storage.local.get("autoTranslate");
+  autoTranslate.checked = settings.autoTranslate === true;
+  autoTranslate.disabled = false;
+  autoTranslate.addEventListener("change", async () => {
+    const checked = autoTranslate.checked;
+    autoTranslate.disabled = true;
+    try {
+      await chrome.storage.local.set({ autoTranslate: checked });
+      autoTranslateStatus.textContent = "";
+    } catch {
+      autoTranslate.checked = !checked;
+      autoTranslateStatus.textContent = "自動翻訳の設定を保存できませんでした。";
+    } finally {
+      autoTranslate.disabled = false;
+    }
+  });
+} catch {
+  autoTranslateStatus.textContent = "自動翻訳の設定を読み込めませんでした。";
 }
 
 try {

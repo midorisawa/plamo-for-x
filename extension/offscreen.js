@@ -73,7 +73,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   if (message.type !== "infer") return;
   if (busy) {
-    respond({ error: "別の投稿を翻訳中です。完了してからもう一度お試しください。" });
+    respond({ busy: true, error: "別の投稿を翻訳中です。完了してからもう一度お試しください。" });
     return;
   }
   busy = true;
