@@ -38,20 +38,11 @@ chrome.tabs.onRemoved.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (sender.tab && message.type === "open-glossary-settings") {
-    chrome.tabs.create({ url: chrome.runtime.getURL("options.html#glossary-editor") })
-      .then(() => respond({}), () => respond({ error: "設定タブを開けませんでした。" }));
-    return true;
-  }
-  if (sender.tab && (message.type === "get-glossary-terms" || message.type === "select-glossaries")) {
+  if (sender.tab && message.type === "get-glossary-terms") {
     (async () => {
       const { glossaries = [], selectedGlossaryIds = [] } =
         await chrome.storage.local.get(["glossaries", "selectedGlossaryIds"]);
-      if (message.type === "get-glossary-terms") return { terms: glossaryTerms(glossaries, selectedGlossaryIds) };
-      const ids = glossaries.filter(({ id }) => message.ids.includes(id)).map(({ id }) => id);
-      glossaryTerms(glossaries, ids);
-      await chrome.storage.local.set({ selectedGlossaryIds: ids });
-      return {};
+      return { terms: glossaryTerms(glossaries, selectedGlossaryIds) };
     })().then(respond, error => respond({ error: error.message }));
     return true;
   }

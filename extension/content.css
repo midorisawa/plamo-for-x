@@ -95,43 +95,6 @@
   display: block;
 }
 
-.sns-translator-glossary {
-  color-scheme: light dark;
-  color: CanvasText;
-  background: Canvas;
-  width: min(28rem, calc(100% - 2rem));
-  max-height: calc(100% - 2rem);
-  padding: 1.25rem;
-  border: 1px solid GrayText;
-  border-radius: 14px;
-  font: 15px/1.5 system-ui, sans-serif;
-}
-
-.sns-translator-glossary::backdrop { background: #0008; }
-.sns-translator-glossary h2 { margin: 0; font-size: 1.15rem; }
-.sns-translator-glossary p { margin: .5rem 0; }
-.sns-translator-glossary p:empty { display: none; }
-.sns-translator-glossary-choices label {
-  display: block;
-  padding-block: .25rem;
-  overflow-wrap: anywhere;
-}
-.sns-translator-glossary-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .5rem;
-  margin-top: 1rem;
-}
-.sns-translator-glossary-actions button {
-  color: ButtonText;
-  background: ButtonFace;
-  border: 1px solid GrayText;
-  border-radius: 6px;
-  padding: .35rem .6rem;
-  font: inherit;
-  cursor: pointer;
-}
-
 @media (prefers-color-scheme: dark) {
   .sns-translator-toolbar {
     color: #71767b;

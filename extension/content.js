@@ -223,21 +223,13 @@ function mount(root) {
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "PLaMoで翻訳";
-  const glossaryButton = document.createElement("button");
-  glossaryButton.type = "button";
-  glossaryButton.textContent = "用語集";
-  glossaryButton.setAttribute("aria-haspopup", "dialog");
-  glossaryButton.addEventListener("click", event => {
-    event.stopPropagation();
-    showGlossaryPicker();
-  });
   const output = document.createElement("div");
   output.setAttribute("role", "status");
   output.lang = target;
   output.dir = "auto";
   const references = document.createElement("div");
   references.className = "sns-translator-references";
-  toolbar.append(icon, label, button, glossaryButton);
+  toolbar.append(icon, label, button);
   panel.append(toolbar, output, references);
   panel.addEventListener("click", event => {
     if (event.target.closest("a")) event.stopPropagation();
