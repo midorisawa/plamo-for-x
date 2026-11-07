@@ -1,4 +1,5 @@
 import { savedModel } from "./model.js";
+import { readTranslation, saveTranslation } from "./translation-cache.js";
 
 let worker;
 let modelVersion;
@@ -29,10 +30,10 @@ function keepWorkerReady() {
   idleTimer = setTimeout(resetWorker, 5 * 60 * 1000);
 }
 
-function prepare(mode) {
+function prepare(mode, model) {
   preparing ??= (async () => {
     clearTimeout(idleTimer);
-    const model = await savedModel();
+    model ??= await savedModel();
     if (!model) throw new Error("拡張機能の設定でモデルを読み込んでください。");
     if (worker && model.lastModified === modelVersion && mode === workerMode) return;
     resetWorker();
@@ -51,17 +52,53 @@ function prepare(mode) {
   return preparing;
 }
 
-async function translate(text, target, mode, onPartial) {
+async function translate(text, target, mode, model, onPartial) {
   if (text.includes("<|plamo:") || text.includes("\0")) {
     return { error: "原文に翻訳できない制御文字が含まれています。" };
   }
   // 事前読み込みの完了を待ち、翻訳時に指定された実行先を適用する
   if (preparing) await preparing.catch(() => {});
-  await prepare(mode);
+  await prepare(mode, model);
   const result = await runWorker({ text, target }, onPartial);
   if (result.error) resetWorker();
   else keepWorkerReady();
   return result;
+}
+
+async function infer(message, respond) {
+  const { id, tabId, documentId, text, target, mode } = message;
+  function sendResult(result) {
+    return chrome.runtime.sendMessage({ type: "inference-result", id, tabId, documentId, result }).catch(() => {});
+  }
+
+  const model = await savedModel();
+  if (!model) {
+    respond({ error: "拡張機能の設定でモデルを読み込んでください。" });
+    return;
+  }
+  const key = JSON.stringify([1, model.lastModified, model.size, target, text]);
+  const cached = await readTranslation(key).catch(() => undefined);
+  if (cached) {
+    respond({ accepted: true });
+    return sendResult(cached);
+  }
+  if (busy) {
+    respond({ busy: true, error: "別の投稿を翻訳中です。完了してからもう一度お試しください。" });
+    return;
+  }
+  busy = true;
+  respond({ accepted: true });
+  let result;
+  try {
+    result = await translate(text, target, mode, model, sendResult);
+    if (result.text && !result.truncated) await saveTranslation(key, result).catch(() => {});
+  } catch (error) {
+    resetWorker();
+    result = { error: error.message };
+  } finally {
+    busy = false;
+  }
+  return sendResult(result);
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
@@ -72,21 +109,6 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return;
   }
   if (message.type !== "infer") return;
-  if (busy) {
-    respond({ busy: true, error: "別の投稿を翻訳中です。完了してからもう一度お試しください。" });
-    return;
-  }
-  busy = true;
-  respond({ accepted: true });
-  const { id, tabId, documentId, text, target, mode } = message;
-  function sendResult(result) {
-    return chrome.runtime.sendMessage({ type: "inference-result", id, tabId, documentId, result }).catch(() => {});
-  }
-  translate(text, target, mode, sendResult).catch(error => {
-    resetWorker();
-    return { error: error.message };
-  }).then(result => {
-    busy = false;
-    return sendResult(result);
-  });
+  infer(message, respond).catch(error => respond({ error: error.message }));
+  return true;
 });
