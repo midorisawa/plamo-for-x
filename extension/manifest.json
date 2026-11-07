@@ -22,6 +22,15 @@
   "options_page": "options.html",
   "content_scripts": [{
     "matches": ["https://x.com/*"],
+    "js": ["quote-source.js"],
+    "run_at": "document_start"
+  }, {
+    "matches": ["https://x.com/*"],
+    "js": ["quote-network.js"],
+    "run_at": "document_start",
+    "world": "MAIN"
+  }, {
+    "matches": ["https://x.com/*"],
     "js": ["languages.js", "links.js", "content.js"],
     "css": ["content.css"],
     "run_at": "document_idle"

@@ -1,14 +1,16 @@
 const postSelector = 'article[data-testid="tweet"]';
 const textSelector = '[data-testid="tweetText"]';
 const noteSelector = '[data-testid="birdwatch-pivot"]';
+const quoteSelector = `${postSelector} div[role="link"]:has([data-testid="User-Name"])`;
 const showMoreSelector = '[data-testid="tweet-text-show-more-link"]';
-const targetSelector = `${postSelector}, ${noteSelector}`;
+const targetSelector = `${postSelector}, ${noteSelector}, ${quoteSelector}`;
 const iconUrl = chrome.runtime.getURL("icons/local-translator.svg");
 const states = new WeakMap();
 const originalLanguages = new WeakMap();
 const nativeSelections = new WeakMap();
 const pending = new Map();
 const autoQueue = new Set();
+const manualQueue = new Set();
 let lastWarmup = -Infinity;
 let targetLanguage = "";
 let sourceLanguages = null;
@@ -16,7 +18,6 @@ let autoTranslate = false;
 let activeTranslations = 0;
 let draining = false;
 let expandedPreview;
-let resumeExpansion;
 
 function requestTranslation(text, target, onPartial, postId, preview) {
   const id = crypto.randomUUID();
@@ -51,7 +52,7 @@ async function drainAutoQueue() {
   draining = true;
   try {
     while (autoTranslate && document.visibilityState === "visible" && !activeTranslations && autoQueue.size) {
-      const state = autoQueue.values().next().value;
+      const state = nextAutoTranslation();
       if (state.panel.isConnected && !state.attempted && await state.translate(true)) {
         // 別のタブの翻訳が終わるまで、同じ投稿を先頭に残す
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -62,6 +63,28 @@ async function drainAutoQueue() {
   } finally {
     draining = false;
   }
+}
+
+function nextAutoTranslation() {
+  for (const state of autoQueue) {
+    if (!state.panel.isConnected) continue;
+    const rect = state.panel.getBoundingClientRect();
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
+    const parent = state.root.matches(quoteSelector) && states.get(state.root.closest(postSelector));
+    return autoQueue.has(parent) ? parent : state;
+  }
+  return autoQueue.values().next().value;
+}
+
+function drainManualQueue() {
+  for (const state of manualQueue) {
+    manualQueue.delete(state);
+    if (state.panel.isConnected) {
+      state.translate(false);
+      return;
+    }
+  }
+  drainAutoQueue();
 }
 
 function updateAutoTranslate(enabled) {
@@ -98,28 +121,40 @@ function nativeTranslationControl(body, root) {
   }
 }
 
+function readPostId(root) {
+  const permalink = [...(root?.querySelectorAll('a[href*="/status/"]') ?? [])]
+    .find(link => link.querySelector("time") && link.closest(targetSelector) === root);
+  return permalink?.pathname.match(/\/status\/(\d+)/)?.[1];
+}
+
 function readTarget(root) {
   const isNote = root.matches(noteSelector);
-  const body = isNote ? root.querySelector(":scope > div[dir]") : [...root.querySelectorAll(textSelector)].find(node => {
-    const card = node.closest('[role="link"]');
-    return node.closest(targetSelector) === root &&
-      !(card && root.contains(card) && card.querySelector('[data-testid="User-Name"]'));
-  });
+  const body = isNote ? root.querySelector(":scope > div[dir]") : [...root.querySelectorAll(textSelector)]
+    .find(node => node.closest(targetSelector) === root);
   const text = body?.textContent.trim();
   if (!text) return null;
   const native = nativeTranslationControl(body, root);
 
   const article = root.closest(postSelector);
-  const permalink = [...(article?.querySelectorAll('a[href*="/status/"]') ?? [])]
-    .find(link => link.querySelector("time") && !article.contains(link.parentElement.closest('[role="link"]')));
-  const id = permalink?.pathname.match(/\/status\/(\d+)/)?.[1];
+  const isQuote = root.matches(quoteSelector);
+  const source = isQuote && root.parentElement.closest(quoteSelector) === null
+    ? quoteSources.get(readPostId(article))
+    : undefined;
+  const previous = body.previousElementSibling;
+  const row = previous?.matches(".sns-translator") ? previous.previousElementSibling : previous;
+  const grokRow = isQuote && !native && row?.querySelector('svg[viewBox="0 0 33 32"] + span') ? row : null;
+  if (grokRow && !source) return null;
+  const id = source?.id ?? readPostId(isNote ? article : root);
   const hrefs = [...body.querySelectorAll("a[href]")].map(anchor => anchor.href);
-  return { body, text, id, language: body.lang, native, hrefs };
+  const original = grokRow ? source.body : null;
+  return { body, text, id, language: original?.lang ?? body.lang, native, hrefs, grokRow, original,
+    shortened: source?.shortened };
 }
 
 function matches(left, right) {
   return right && left.body === right.body && left.text === right.text && left.id === right.id &&
-    left.language === right.language && left.native?.translated === right.native?.translated &&
+    left.language === right.language && left.original === right.original &&
+    left.native?.translated === right.native?.translated &&
     left.hrefs.length === right.hrefs.length && left.hrefs.every((href, index) => href === right.hrefs[index]);
 }
 
@@ -155,7 +190,8 @@ function mount(root) {
   const previous = states.get(root);
   if (previous?.revealing) return;
   const isNote = root.matches(noteSelector);
-  const collapsed = !isNote && Boolean(root.querySelector(showMoreSelector));
+  const collapsed = !isNote && (post?.shortened || [...root.querySelectorAll(showMoreSelector)]
+    .some(control => control.closest(targetSelector) === root));
   const known = originalLanguages.get(root);
   const source = post?.native?.translated
     ? (known?.id === post.id && known?.text === post.text ? known.language : null)
@@ -164,6 +200,7 @@ function mount(root) {
       previous.collapsed === collapsed && matches(previous.post, post) && previous.panel.isConnected) return;
   previous?.panel.remove();
   autoQueue.delete(previous);
+  manualQueue.delete(previous);
   states.delete(root);
   if (!post || !canTranslate(source, target)) return;
 
@@ -192,7 +229,8 @@ function mount(root) {
     if (event.target.closest("a")) event.stopPropagation();
   });
   post.body.before(panel);
-  const state = { post, panel, target, collapsed, label, output, references, translate: runTranslation };
+  post.grokRow?.classList.add("sns-translator-native-row");
+  const state = { root, post, panel, target, collapsed, label, output, references, translate: runTranslation };
   states.set(root, state);
   warmTranslation();
   button.addEventListener("pointerenter", warmTranslation);
@@ -215,50 +253,47 @@ function mount(root) {
   function showTranslation(show) {
     label.hidden = !show;
     button.textContent = show ? "原文を表示" : "PLaMo訳を表示";
+    output.lang = !show && post.original ? post.language : target;
     if (show) renderLinkedTranslation(output, references, translation, links);
+    else if (post.original) output.replaceChildren(...post.original.cloneNode(true).childNodes);
     else output.textContent = "";
     panel.toggleAttribute("data-show-translation", show);
+    panel.toggleAttribute("data-show-quote-original", !show && Boolean(post.original));
   }
 
   button.addEventListener("click", event => {
     event.stopPropagation();
     runTranslation(false);
   });
-  if (autoTranslate && nativeSelections.get(root) !== (post.id ?? null)) {
+  if (expansion) {
+    runTranslation(false);
+  } else if (autoTranslate && nativeSelections.get(root) !== (post.id ?? null)) {
     autoQueue.add(state);
-    drainAutoQueue();
-  } else if (expansion) {
-    if (activeTranslations) {
-      resumeExpansion = () => {
-        if (panel.isConnected) runTranslation(false);
-      };
-    } else {
-      runTranslation(false);
-    }
+    queueMicrotask(drainAutoQueue);
   }
 
   async function runTranslation(automatic) {
     if (button.disabled) return;
+    if (!automatic && translation !== null) {
+      showTranslation(!panel.hasAttribute("data-show-translation"));
+      return;
+    }
+    if (!automatic && activeTranslations) {
+      manualQueue.add(state);
+      return;
+    }
     activeTranslations++;
     try {
       return await translate(automatic);
     } finally {
       activeTranslations--;
-      if (!activeTranslations && resumeExpansion) {
-        const resume = resumeExpansion;
-        resumeExpansion = undefined;
-        resume();
-      }
-      drainAutoQueue();
+      if (!activeTranslations) drainManualQueue();
     }
   }
 
   async function translate(automatic) {
     if (!matches(post, readTarget(root))) return;
-    if (translation !== null) {
-      showTranslation(!panel.hasAttribute("data-show-translation"));
-      return;
-    }
+    if (translation !== null) return;
     state.attempted = true;
     button.disabled = true;
     if (!keepingPreview) output.textContent = "";
@@ -351,7 +386,7 @@ function mount(root) {
       showTranslation(true);
     }
     try {
-      const input = translationInput(post.body, isNote);
+      const input = translationInput(post.original ?? post.body, isNote);
       links = input.links;
       if (!keepingPreview) references.replaceChildren();
       if (links.length && !input.hasProse) {
@@ -404,7 +439,7 @@ document.addEventListener("click", event => {
   if (!event.isTrusted) return;
   const showMore = event.target.closest(showMoreSelector);
   if (showMore) {
-    const state = states.get(showMore.closest(postSelector));
+    const state = states.get(showMore.closest(targetSelector));
     expandedPreview = state?.post.id && state.panel.hasAttribute("data-show-translation") ? {
       id: state.post.id,
       target: state.target,
@@ -455,6 +490,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 document.addEventListener("visibilitychange", () => {
   if (document.querySelector(".sns-translator")) warmTranslation();
   drainAutoQueue();
+});
+document.addEventListener("sns-translator-quote-ready", event => {
+  const id = event.detail;
+  if (typeof id !== "string" || !/^\d+$/.test(id)) return;
+  for (const article of document.querySelectorAll(`${postSelector}:has(a[href$="/status/${id}"] time)`)) {
+    article.querySelectorAll(quoteSelector).forEach(mount);
+  }
 });
 new MutationObserver(records => {
   const targets = new Set();
