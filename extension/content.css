@@ -91,6 +91,11 @@
   overflow-wrap: anywhere;
 }
 
+.sns-translator[data-show-translation] [role="status"] a,
+.sns-translator-references a {
+  text-decoration: none;
+}
+
 .sns-translator-references a {
   display: block;
 }
