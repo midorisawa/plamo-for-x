@@ -1,4 +1,5 @@
 export const glossaryLimit = 20;
+export const withGlossaryLock = action => navigator.locks.request("sns-translator-glossaries", action);
 
 export function glossaryTerms(glossaries, ids) {
   const terms = new Map();

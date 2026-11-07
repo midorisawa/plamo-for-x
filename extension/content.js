@@ -10,6 +10,7 @@ const iconUrl = chrome.runtime.getURL("icons/local-translator.svg");
 const states = new WeakMap();
 const originalLanguages = new WeakMap();
 const nativeSelections = new WeakMap();
+const nativeRestorations = new WeakMap();
 const pending = new Map();
 const autoQueue = new Set();
 const manualQueue = new Set();
@@ -175,7 +176,8 @@ function switchNativeTranslation(root, post, translated) {
     function check() {
       const current = readTarget(root);
       if (!root.isConnected || (current && current.id !== post.id)) finish(null);
-      else if (current && Boolean(current.native?.translated) === translated && current.text !== post.text) finish(current);
+      else if (current && (current.native ? current.native.translated === translated
+        : !translated && current.text !== post.text)) finish(current);
     }
     const observer = new MutationObserver(check);
     const timer = setTimeout(() => finish(null), 3000);
@@ -323,8 +325,12 @@ function mount(root) {
       panel.setAttribute("data-keep-grok", "");
       state.revealing = true;
       const original = await switchNativeTranslation(root, post, false);
+      if (original?.native?.button) nativeRestorations.set(root, original);
       if (!panel.isConnected) {
-        if (!translationEnabled && original?.native?.button) await switchNativeTranslation(root, original, true);
+        if (!translationEnabled && original?.native?.button) {
+          nativeRestorations.delete(root);
+          await switchNativeTranslation(root, original, true);
+        }
         return;
       }
       if (!original) {
@@ -337,7 +343,6 @@ function mount(root) {
         return;
       }
       state.post = original;
-      state.restoreNative = true;
       const language = isProfile ? await detectProfileLanguage(original) : translationLanguage(original.language);
       if (!panel.isConnected) return;
       if (isProfile) profileLanguage = language;
@@ -345,7 +350,7 @@ function mount(root) {
       post = state.post = original;
       post.body.before(panel);
       if (!canTranslate(language, target) || target !== targetLanguage) {
-        state.restoreNative = false;
+        nativeRestorations.delete(root);
         if (original.native?.button) await switchNativeTranslation(root, original, true);
         state.revealing = false;
         mount(root);
@@ -492,12 +497,12 @@ document.addEventListener("click", event => {
   }
   const button = event.target.closest("button");
   const root = button?.closest(targetSelector);
-  const state = root && states.get(root);
-  if (!state) return;
+  if (!root) return;
   const post = readTarget(root);
   if (post?.native?.button !== button) return;
+  nativeRestorations.delete(root);
   nativeSelections.set(root, post.id ?? null);
-  autoQueue.delete(state);
+  autoQueue.delete(states.get(root));
 }, true);
 
 chrome.runtime.onMessage.addListener(message => {
@@ -541,9 +546,10 @@ function setTranslationEnabled(enabled) {
   manualQueue.clear();
   expandedPreview = undefined;
   for (const root of document.querySelectorAll(targetSelector)) {
-    const state = states.get(root);
-    if (state?.restoreNative && state.panel.isConnected && state.post.native?.button && matches(state.post, readTarget(root))) {
-      switchNativeTranslation(root, state.post, true);
+    const original = nativeRestorations.get(root);
+    nativeRestorations.delete(root);
+    if (original && matches(original, readTarget(root))) {
+      switchNativeTranslation(root, original, true);
     }
   }
   document.querySelectorAll(".sns-translator").forEach(panel => panel.remove());

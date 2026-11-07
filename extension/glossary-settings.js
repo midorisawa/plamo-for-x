@@ -1,4 +1,4 @@
-import { glossaryLimit, glossaryTerms, validGlossaryTerm } from "./glossary.js";
+import { glossaryLimit, glossaryTerms, validGlossaryTerm, withGlossaryLock } from "./glossary.js";
 
 function setupGlossarySelection() {
   const fields = document.querySelector("#glossary-selection");
@@ -83,17 +83,19 @@ export function setupGlossarySettings(popup) {
     fields.disabled = true;
     status.textContent = "";
     try {
-      glossaries = await navigator.locks.request("sns-translator-glossaries", async () => {
-        const { glossaries = [] } = await chrome.storage.local.get("glossaries");
+      glossaries = await withGlossaryLock(async () => {
+        const { glossaries = [], selectedGlossaryIds = [] } =
+          await chrome.storage.local.get(["glossaries", "selectedGlossaryIds"]);
         const next = glossaries.filter(item => item.id !== id);
         if (entry) next.push(entry);
+        if (entry) glossaryTerms(next, selectedGlossaryIds);
         await chrome.storage.local.set({ glossaries: next });
         return next;
       });
       openEditor(entry?.id);
       status.textContent = entry ? "用語集を保存しました。" : "用語集を削除しました。";
-    } catch {
-      status.textContent = "用語集を更新できませんでした。";
+    } catch (error) {
+      status.textContent = `用語集を更新できませんでした。 ${error.message}`;
     } finally {
       fields.disabled = false;
     }

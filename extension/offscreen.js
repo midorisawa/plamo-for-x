@@ -2,6 +2,7 @@ import { activeModel, defaultModel } from "./model.js";
 import { checkGpu } from "./gpu.js";
 import { readTranslation, saveTranslation } from "./translation-cache.js";
 import { glossaryLimit, validGlossaryTerm } from "./glossary.js";
+import { runWorker } from "./inference-client.js";
 
 let worker;
 let loadedModel;
@@ -20,17 +21,6 @@ function resetWorker() {
   clearTimeout(idleTimer);
   worker?.terminate();
   worker = undefined;
-}
-
-function runWorker(message, onPartial) {
-  return new Promise((resolve, reject) => {
-    worker.onmessage = ({ data }) => {
-      if (data.partial !== undefined) onPartial(data);
-      else resolve(data);
-    };
-    worker.onerror = () => reject(new Error("推論Workerを実行できませんでした。"));
-    worker.postMessage(message);
-  });
 }
 
 function keepWorkerReady() {
@@ -52,7 +42,7 @@ function prepare(mode, model, selectedModel) {
         model.size === loadedModel.size && mode === workerMode) return;
     resetWorker();
     worker = new Worker("./inference-worker.js", { type: "module" });
-    const result = await runWorker({ model, mode });
+    const result = await runWorker(worker, { model, mode });
     if (result.error) throw new Error(result.error);
     loadedModel = { name: model.name, lastModified: model.lastModified, size: model.size };
     workerMode = mode;
@@ -71,9 +61,13 @@ async function translate(text, target, mode, model, glossary, onPartial) {
     return { error: "原文に翻訳できない制御文字が含まれています。" };
   }
   // 事前読み込みの完了を待ち、翻訳時に指定された実行先を適用する
-  if (preparing) await preparing.catch(() => {});
+  if (preparing) {
+    await preparing.catch(error => {
+      if (error.name === "TimeoutError") throw error;
+    });
+  }
   await prepare(mode, model);
-  const result = await runWorker({ text, target, glossary }, onPartial);
+  const result = await runWorker(worker, { text, target, glossary }, onPartial);
   if (result.error) resetWorker();
   else keepWorkerReady();
   return result;

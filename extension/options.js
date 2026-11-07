@@ -1,7 +1,7 @@
 import { modelSource, withModelLock } from "./model.js";
 import { setupModelSettings } from "./model-settings.js";
 import { setupGlossarySettings } from "./glossary-settings.js";
-import { glossaryTerms } from "./glossary.js";
+import { glossaryTerms, withGlossaryLock } from "./glossary.js";
 import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translation-cache.js";
 
 const popup = chrome.extension.getViews({ type: "popup" }).includes(window);
@@ -157,6 +157,22 @@ settingsForm.addEventListener("change", () => {
   saveStatus.textContent = Object.keys(readChanges(readSettings())).length ? "未保存の変更があります。" : "";
 });
 
+async function saveChanges(changes) {
+  if (changes.selectedGlossaryIds) {
+    const { glossaries = [] } = await chrome.storage.local.get("glossaries");
+    changes.selectedGlossaryIds = glossaries.filter(({ id }) => changes.selectedGlossaryIds.includes(id)).map(({ id }) => id);
+    glossaryTerms(glossaries, changes.selectedGlossaryIds);
+  }
+  if (changes.selectedModel) {
+    await withModelLock(async () => {
+      if (!await modelSource(changes.selectedModel)) throw new Error("選択したモデルは削除されました。");
+      await chrome.storage.local.set(changes);
+    });
+  } else if (Object.keys(changes).length) {
+    await chrome.storage.local.set(changes);
+  }
+}
+
 settingsForm.addEventListener("submit", async event => {
   event.preventDefault();
   if (saveButton.disabled) return;
@@ -166,20 +182,11 @@ settingsForm.addEventListener("submit", async event => {
   saveButton.disabled = true;
   saveStatus.textContent = "保存中…";
   try {
-    if (changes.selectedGlossaryIds) {
-      const { glossaries = [] } = await chrome.storage.local.get("glossaries");
-      changes.selectedGlossaryIds = glossaries.filter(({ id }) => changes.selectedGlossaryIds.includes(id)).map(({ id }) => id);
-      glossaryTerms(glossaries, changes.selectedGlossaryIds);
-    }
+    if (changes.selectedGlossaryIds) await withGlossaryLock(() => saveChanges(changes));
+    else await saveChanges(changes);
     if (changes.selectedModel) {
-      await withModelLock(async () => {
-        if (!await modelSource(changes.selectedModel)) throw new Error("選択したモデルは削除されました。");
-        await chrome.storage.local.set(changes);
-      });
       for (const option of modelSelect.options) option.defaultSelected = option.value === changes.selectedModel;
       modelSelect.value = changes.selectedModel;
-    } else if (Object.keys(changes).length) {
-      await chrome.storage.local.set(changes);
     }
     if (changes.selectedGlossaryIds) {
       for (const input of glossaryChoices.querySelectorAll("input")) {

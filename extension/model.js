@@ -1,3 +1,5 @@
+import { runWorker } from "./inference-client.js";
+
 export const models = [
   { id: "0.8b", label: "0.8B", size: "約573MB", bundled: true },
   { id: "2b", label: "2B", size: "約1.81GB" },
@@ -49,8 +51,15 @@ async function saveModel(id, stream, signal) {
 export async function importModel(file) {
   const model = models.find(({ id, bundled }) => !bundled && file.name === modelFilename(id));
   const header = new TextDecoder().decode(await file.slice(0, 4).arrayBuffer());
-  if (!model || header !== "GGUF") {
+  if (!model || file.size < 24 || header !== "GGUF") {
     throw new Error("PLaMo 3 Translate 2BのQ4_K_M形式のGGUFファイルを選択してください。");
+  }
+  const worker = new Worker("./inference-worker.js", { type: "module" });
+  try {
+    const result = await runWorker(worker, { model: file, mode: "cpu" });
+    if (!result.ready) throw new Error(result.error ?? "モデルを読み込めませんでした。");
+  } finally {
+    worker.terminate();
   }
   await saveModel(model.id, file.stream());
 }
