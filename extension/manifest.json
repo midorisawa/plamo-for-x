@@ -22,7 +22,7 @@
   "options_page": "options.html",
   "content_scripts": [{
     "matches": ["https://x.com/*"],
-    "js": ["languages.js", "content.js"],
+    "js": ["languages.js", "links.js", "content.js"],
     "css": ["content.css"],
     "run_at": "document_idle"
   }],

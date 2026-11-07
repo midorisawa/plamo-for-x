@@ -58,10 +58,14 @@
   display: none;
 }
 
+.sns-translator [role="status"] a,
 .sns-translator-references a {
-  display: block;
   color: #1d9bf0;
   overflow-wrap: anywhere;
+}
+
+.sns-translator-references a {
+  display: block;
 }
 
 @media (prefers-color-scheme: dark) {

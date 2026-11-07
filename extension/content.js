@@ -45,12 +45,14 @@ function readTarget(root) {
   const permalink = [...(article?.querySelectorAll('a[href*="/status/"]') ?? [])]
     .find(link => link.querySelector("time") && !article.contains(link.closest('[role="link"]')));
   const id = permalink?.pathname.match(/\/status\/(\d+)/)?.[1];
-  return { body, text, id, language: body.lang, native };
+  const hrefs = [...body.querySelectorAll("a[href]")].map(anchor => anchor.href);
+  return { body, text, id, language: body.lang, native, hrefs };
 }
 
 function matches(left, right) {
   return right && left.body === right.body && left.text === right.text && left.id === right.id &&
-    left.language === right.language && left.native?.translated === right.native?.translated;
+    left.language === right.language && left.native?.translated === right.native?.translated &&
+    left.hrefs.length === right.hrefs.length && left.hrefs.every((href, index) => href === right.hrefs[index]);
 }
 
 function switchNativeTranslation(root, post, translated) {
@@ -106,32 +108,33 @@ function mount(root) {
   output.lang = target;
   output.dir = "auto";
   const isNote = root.matches(noteSelector);
-  const references = isNote ? document.createElement("div") : null;
+  const references = document.createElement("div");
+  references.className = "sns-translator-references";
   toolbar.append(icon, label, button);
-  panel.append(toolbar, output);
-  if (references) {
-    references.className = "sns-translator-references";
-    references.addEventListener("click", event => event.stopPropagation());
-    panel.append(references);
-  }
+  panel.append(toolbar, output, references);
+  panel.addEventListener("click", event => {
+    if (event.target.closest("a")) event.stopPropagation();
+  });
   post.body.before(panel);
   const state = { post, panel, target };
   states.set(root, state);
   warmTranslation();
   button.addEventListener("pointerenter", warmTranslation);
-  let translation;
+  let translation = null;
+  let links = [];
 
   function showTranslation(show) {
     label.hidden = !show;
     button.textContent = show ? "原文を表示" : "PLaMo訳を表示";
-    output.textContent = show ? translation : "";
+    if (show) renderLinkedTranslation(output, references, translation, links);
+    else output.textContent = "";
     panel.toggleAttribute("data-show-translation", show);
   }
 
   button.addEventListener("click", async event => {
     event.stopPropagation();
     if (!matches(post, readTarget(root))) return;
-    if (translation) {
+    if (translation !== null) {
       showTranslation(!panel.hasAttribute("data-show-translation"));
       return;
     }
@@ -205,7 +208,7 @@ function mount(root) {
           output.setAttribute("aria-busy", "true");
           panel.setAttribute("data-show-translation", "");
         }
-        output.textContent = result.partial;
+        renderLinkedTranslation(output, references, result.partial, links, true);
         return;
       }
       button.disabled = false;
@@ -224,24 +227,14 @@ function mount(root) {
     const timer = setTimeout(() => finish({ error: "翻訳に時間がかかっています。もう一度お試しください。" }), 180000);
     pending.set(id, finish);
     try {
-      let text = post.text;
-      if (references) {
-        const body = post.body.cloneNode(true);
-        references.replaceChildren();
-        for (const source of body.querySelectorAll("a[href]")) {
-          if (/^https?:\/\//i.test(source.href)) {
-            const link = document.createElement("a");
-            link.href = source.href;
-            link.textContent = source.textContent;
-            link.target = "_blank";
-            link.rel = "noopener noreferrer";
-            references.append(link);
-          }
-          source.remove();
-        }
-        text = body.textContent.trim() || post.text;
+      const input = translationInput(post.body, isNote);
+      links = input.links;
+      references.replaceChildren();
+      if (links.length && !input.hasProse) {
+        finish({ text: input.text });
+        return;
       }
-      const response = await chrome.runtime.sendMessage({ type: "translate-post", id, text, target });
+      const response = await chrome.runtime.sendMessage({ type: "translate-post", id, text: input.text, target });
       if (!response?.accepted) finish({ error: response?.error ?? "翻訳を開始できませんでした。" });
     } catch {
       finish({ error: "拡張機能に接続できませんでした。ページを再読み込みしてください。" });
