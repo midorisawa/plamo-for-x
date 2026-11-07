@@ -39,13 +39,9 @@ function setupGlossarySelection() {
 
 export function setupGlossarySettings(popup) {
   setupGlossarySelection();
-  const section = document.querySelector("#glossaries");
+  if (popup) return;
+
   const form = document.querySelector("#glossary-form");
-  if (popup) {
-    document.querySelector("#glossary-editor").hidden = true;
-    return;
-  }
-  section.querySelector("a").hidden = true;
   const select = document.querySelector("#glossary-list");
   const name = document.querySelector("#glossary-name");
   const rows = document.querySelector("#glossary-entries");

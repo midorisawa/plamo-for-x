@@ -4,120 +4,143 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SNS Translatorの設定</title>
 <link rel="stylesheet" href="options.css">
-<main>
-  <header class="settings-header">
+<body>
+<header class="app-header">
+  <div class="brand">
     <img src="icons/local-translator-48.png" width="32" height="32" alt="">
-    <h1>SNS Translatorの設定</h1>
-  </header>
-
-  <form id="translation-settings">
-  <fieldset id="translation-fields" disabled>
-  <section aria-labelledby="translation-title">
-    <h2 id="translation-title">翻訳</h2>
-    <label class="field">翻訳先の言語
-      <select id="target-language" disabled></select>
-    </label>
-    <details>
-      <summary>翻訳する原文の言語</summary>
-      <fieldset id="source-languages" aria-label="翻訳対象" disabled>
-        <label class="check"><input id="all-source-languages" type="checkbox" checked>すべての言語を対象にする</label>
-        <p class="muted">翻訳する言語を選択してください。複数選べます。</p>
-        <div id="source-language-choices"></div>
-      </fieldset>
-    </details>
-    <label class="check">
-      <input id="auto-translate" type="checkbox" disabled>読み込まれた投稿から順に自動で翻訳する
-    </label>
-  </section>
-
-  <section id="model" aria-labelledby="model-title">
-    <h2 id="model-title">モデルと実行先</h2>
-    <label class="field">翻訳の実行先
-      <select id="inference-mode" disabled>
-        <option value="gpu">GPU（WebGPU）</option>
-        <option value="cpu">CPU</option>
-      </select>
-    </label>
-    <div class="model-panel">
-      <label class="field">翻訳に使うモデル
-        <select id="selected-model" disabled><option value="">確認中…</option></select>
-      </label>
-      <p id="model-selection-status" role="status"></p>
-      <a id="open-model-settings" href="options.html#model" target="_blank" rel="noopener">モデル管理を開く</a>
-      <button id="show-model-manager" type="button" hidden>モデル管理を開く</button>
-      <p class="muted">Built with PLaMo · <a href="models/PLaMo-Community-License-ja.txt" target="_blank" rel="noopener">PLaMoコミュニティライセンス</a></p>
-    </div>
-  </section>
-  <section id="glossaries" aria-labelledby="glossary-title">
-    <h2 id="glossary-title">用語集</h2>
-      <fieldset id="glossary-selection" disabled>
-        <legend>適用する用語集</legend>
-        <div id="glossary-selection-choices"></div>
-      </fieldset>
-      <p id="glossary-selection-status" role="status"></p>
-    <a href="options.html#glossary-editor" target="_blank" rel="noopener">設定タブで用語集を編集</a>
-  </section>
-  </fieldset>
-  </form>
-
-  <section id="glossary-editor" aria-labelledby="glossary-editor-title">
-    <h2 id="glossary-editor-title">用語集を編集</h2>
-    <form id="glossary-form">
-      <fieldset disabled>
-        <p class="muted">新しく作るか、登録済みの用語集を選んで原語と訳語を編集します。</p>
-        <label class="field">編集する用語集<select id="glossary-list"></select></label>
-        <label class="field">用語集の名前<input id="glossary-name" type="text" maxlength="80" required></label>
-        <div id="glossary-entries"></div>
-        <div class="actions">
-          <button id="glossary-add-entry" type="button">用語を追加</button>
-          <button type="submit">用語集を保存</button>
-          <button id="glossary-delete" class="danger" type="button">用語集を削除</button>
-        </div>
-      </fieldset>
-      <p id="glossary-status" role="status"></p>
-    </form>
-  </section>
-
-  <section aria-labelledby="cache-title">
-    <h2 id="cache-title">翻訳キャッシュ</h2>
-    <form id="cache-settings">
-      <fieldset disabled>
-        <div class="cache-usage">
-          <span>使用量</span>
-          <span id="cache-usage" role="status">確認中…</span>
-          <meter id="cache-meter" aria-label="翻訳キャッシュの使用量" min="0" max="1" value="0"></meter>
-        </div>
-        <div class="actions cache-actions">
-          <label class="field">上限（MiB）
-            <input id="cache-limit" type="number" min="1" step="1" required>
-          </label>
-          <button type="submit">上限を保存</button>
-          <button id="clear-cache" class="danger" type="button">キャッシュを削除</button>
-        </div>
-      </fieldset>
-      <p id="cache-status" role="status"></p>
-    </form>
-  </section>
-  <footer class="save-bar">
-    <p id="save-status" role="status"></p>
-    <button id="save-settings" type="submit" form="translation-settings" disabled>保存</button>
-  </footer>
-</main>
-<dialog id="model-manager" aria-labelledby="model-manager-title">
-  <header class="manager-header">
-    <h2 id="model-manager-title">モデル管理</h2>
-    <form method="dialog"><button class="close-button" aria-label="モデル管理を閉じる">×</button></form>
-  </header>
-  <h3>モデル一覧</h3>
-  <p class="muted">0.8Bは同梱されています。2Bを使う場合はダウンロードするか、GGUFファイルを取り込んでください。</p>
-  <div id="model-list"></div>
-  <p id="model-feedback" role="status"></p>
-  <div class="model-import">
-    <label class="field">保存済みの2BのGGUFファイルを取り込む
-      <input id="import-model" type="file" accept=".gguf" disabled>
-    </label>
+    <div><strong>SNS Translator</strong><small>Xの投稿を端末内で翻訳</small></div>
   </div>
-</dialog>
+  <a class="button-link popup-only" href="options.html" target="_blank" rel="noopener">詳細設定<span aria-hidden="true"> ↗</span></a>
+</header>
+
+<main class="layout">
+  <nav class="settings-nav tab-only" aria-label="設定項目">
+    <p>設定項目</p>
+    <a href="#translation">翻訳</a>
+    <a href="#model">モデルと実行先</a>
+    <a href="#glossaries">用語集</a>
+    <a href="#cache">翻訳キャッシュ</a>
+  </nav>
+
+  <div class="settings-content">
+    <header class="page-title tab-only">
+      <h1>設定</h1>
+      <p>投稿の翻訳方法と、端末に保存するデータを管理します。</p>
+    </header>
+
+    <form id="translation-settings">
+      <fieldset id="translation-fields" disabled>
+        <section id="translation" class="panel" aria-labelledby="translation-title">
+          <h2 id="translation-title">翻訳</h2>
+          <label class="field">翻訳先の言語
+            <select id="target-language" disabled></select>
+          </label>
+          <label class="toggle-row">
+            <span><strong>自動翻訳</strong><small>表示された投稿を順に翻訳する</small></span>
+            <input id="auto-translate" type="checkbox" role="switch" disabled>
+          </label>
+          <details class="tab-only">
+            <summary>翻訳する原文の言語</summary>
+            <fieldset id="source-languages" aria-label="翻訳対象" disabled>
+              <label class="check"><input id="all-source-languages" type="checkbox" checked>すべての言語を対象にする</label>
+              <div id="source-language-choices"></div>
+            </fieldset>
+          </details>
+        </section>
+
+        <section id="model" class="panel tab-only" aria-labelledby="model-title">
+          <h2 id="model-title">モデルと実行先</h2>
+          <p class="section-description">0.8Bは同梱モデルです。2Bを使うには、モデルを追加してから選択します。</p>
+          <div class="field-grid">
+            <label class="field">翻訳の実行先
+              <select id="inference-mode" disabled>
+                <option value="gpu">GPU（WebGPU）</option>
+                <option value="cpu">CPU</option>
+              </select>
+            </label>
+            <label class="field">翻訳に使うモデル
+              <select id="selected-model" disabled><option value="">確認中…</option></select>
+            </label>
+          </div>
+          <p id="model-selection-status" role="status"></p>
+          <section id="model-manager" aria-labelledby="model-manager-title">
+            <h3 id="model-manager-title">モデル管理</h3>
+            <p class="section-description">2Bをダウンロードするか、取得済みのGGUFファイルを取り込みます。</p>
+            <div id="model-list"></div>
+            <p id="model-feedback" role="status"></p>
+            <div class="model-import">
+              <label class="field">2BのGGUFファイルを取り込む
+                <input id="import-model" type="file" accept=".gguf" disabled>
+              </label>
+            </div>
+            <p class="muted">Built with PLaMo · <a href="models/PLaMo-Community-License-ja.txt" target="_blank" rel="noopener">PLaMoコミュニティライセンス</a></p>
+          </section>
+        </section>
+
+        <section id="glossaries" class="panel" aria-label="用語集">
+          <h2 id="glossary-title" class="tab-only">用語集</h2>
+          <details id="glossary-picker">
+            <summary>適用する用語集</summary>
+            <p class="muted">選んだ用語集から合計20組まで適用できます。</p>
+            <fieldset id="glossary-selection" aria-label="適用する用語集" disabled>
+              <div id="glossary-selection-choices"></div>
+            </fieldset>
+            <p id="glossary-selection-status" role="status"></p>
+            <a class="popup-only" href="options.html#glossary-editor" target="_blank" rel="noopener">用語集を編集<span aria-hidden="true"> ↗</span></a>
+          </details>
+        </section>
+      </fieldset>
+    </form>
+
+    <section id="glossary-editor" class="panel tab-only" aria-labelledby="glossary-editor-title">
+      <h2 id="glossary-editor-title">用語集を編集</h2>
+      <p class="section-description">新しく作るか、登録済みの用語集を選んで原語と訳語を編集します。</p>
+      <form id="glossary-form">
+        <fieldset disabled>
+          <div class="field-grid">
+            <label class="field">編集する用語集<select id="glossary-list"></select></label>
+            <label class="field">用語集の名前<input id="glossary-name" type="text" maxlength="80" required></label>
+          </div>
+          <div id="glossary-entries"></div>
+          <div class="actions">
+            <button id="glossary-add-entry" type="button">用語を追加</button>
+            <button type="submit">用語集を保存</button>
+            <button id="glossary-delete" class="danger separate-action" type="button">用語集を削除</button>
+          </div>
+        </fieldset>
+        <p id="glossary-status" role="status"></p>
+      </form>
+    </section>
+
+    <section id="cache" class="panel tab-only" aria-labelledby="cache-title">
+      <h2 id="cache-title">翻訳キャッシュ</h2>
+      <p class="section-description">保存済みの訳文を再利用して、同じ投稿の再翻訳を減らします。</p>
+      <form id="cache-settings">
+        <fieldset disabled>
+          <div class="cache-usage">
+            <span>使用量</span>
+            <span id="cache-usage" role="status">確認中…</span>
+            <meter id="cache-meter" aria-label="翻訳キャッシュの使用量" min="0" max="1" value="0"></meter>
+          </div>
+          <div class="actions">
+            <label class="field">上限（MiB）
+              <input id="cache-limit" type="number" min="1" step="1" required>
+            </label>
+            <button type="submit">上限を保存</button>
+            <button id="clear-cache" class="danger separate-action" type="button">キャッシュを削除</button>
+          </div>
+        </fieldset>
+        <p id="cache-status" role="status"></p>
+      </form>
+    </section>
+
+    <footer class="save-bar">
+      <p id="save-status" role="status">設定を読み込み中…</p>
+      <button id="save-settings" class="primary" type="submit" form="translation-settings" disabled>設定を保存</button>
+    </footer>
+  </div>
+</main>
+
 <template id="model-row">
   <div class="model-row">
     <div>
@@ -147,4 +170,5 @@
 </dialog>
 <script src="languages.js"></script>
 <script type="module" src="options.js"></script>
+</body>
 </html>

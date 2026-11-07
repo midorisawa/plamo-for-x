@@ -5,7 +5,11 @@ import { glossaryTerms } from "./glossary.js";
 import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translation-cache.js";
 
 const popup = chrome.extension.getViews({ type: "popup" }).includes(window);
-setupModelSettings(popup);
+document.documentElement.classList.toggle("popup", popup);
+if (!popup) {
+  setupModelSettings();
+  document.querySelector("#glossary-picker").open = true;
+}
 setupGlossarySettings(popup);
 const languageSelect = document.querySelector("#target-language");
 const settingsForm = document.querySelector("#translation-settings");
@@ -103,6 +107,7 @@ try {
   for (const control of [languageSelect, sourceLanguagesField, inferenceSelect, autoTranslate]) control.disabled = false;
   settingsFields.disabled = false;
   saveButton.disabled = false;
+  saveStatus.textContent = "";
 } catch {
   saveStatus.textContent = "設定を読み込めませんでした。";
 }
@@ -206,8 +211,8 @@ clearCacheDialog.addEventListener("close", () => {
   }
 });
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && !cacheFields.disabled) {
+  if (!popup && !document.hidden && !cacheFields.disabled) {
     updateCacheSettings(null, cacheStatus.textContent, "キャッシュの使用量を読み込めませんでした。", false);
   }
 });
-updateCacheSettings(null, "", "キャッシュの使用量を読み込めませんでした。");
+if (!popup) updateCacheSettings(null, "", "キャッシュの使用量を読み込めませんでした。");

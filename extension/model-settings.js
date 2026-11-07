@@ -1,23 +1,15 @@
 import { activeModel, defaultModel, deleteModel, downloadModel, importModel, models, modelSource, withModelLock } from "./model.js";
 
-export function setupModelSettings(popup) {
+export function setupModelSettings() {
   const select = document.querySelector("#selected-model");
   const selectionStatus = document.querySelector("#model-selection-status");
-  const manager = document.querySelector("#model-manager");
-  const showManager = document.querySelector("#show-model-manager");
   const feedback = document.querySelector("#model-feedback");
   const input = document.querySelector("#import-model");
   const list = document.querySelector("#model-list");
   const template = document.querySelector("#model-row");
   let busy = false;
 
-  document.documentElement.classList.toggle("popup", popup);
-  document.querySelector("#open-model-settings").hidden = !popup;
-  showManager.hidden = popup;
-  showManager.addEventListener("click", () => manager.showModal());
-  if (!popup && location.hash === "#model") manager.showModal();
-
-  const rows = popup ? [] : models.flatMap(({ id, label, size, bundled }) => {
+  const rows = models.flatMap(({ id, label, size, bundled }) => {
     const row = template.content.firstElementChild.cloneNode(true);
     const name = `PLaMo 3 Translate ${label}`;
     row.querySelector("strong").textContent = name;

@@ -14,7 +14,7 @@
     "128": "icons/local-translator-128.png"
   },
   "action": {
-    "default_title": "SNS Translatorの設定",
+    "default_title": "SNS Translator",
     "default_popup": "options.html",
     "default_icon": {
       "16": "icons/local-translator-16.png",
