@@ -1,13 +1,19 @@
 const offscreenPage = "offscreen.html";
 let creating;
+let closing = Promise.resolve();
+
+function offscreenContexts() {
+  return chrome.runtime.getContexts({
+    contextTypes: ["OFFSCREEN_DOCUMENT"],
+    documentUrls: [chrome.runtime.getURL(offscreenPage)],
+  });
+}
 
 async function ensureOffscreen() {
   if (!creating) {
     creating = (async () => {
-      const contexts = await chrome.runtime.getContexts({
-        contextTypes: ["OFFSCREEN_DOCUMENT"],
-        documentUrls: [chrome.runtime.getURL(offscreenPage)],
-      });
+      await closing;
+      const contexts = await offscreenContexts();
       if (contexts.length) return;
       await chrome.offscreen.createDocument({
         url: offscreenPage,
@@ -18,6 +24,16 @@ async function ensureOffscreen() {
   }
   await creating;
 }
+
+chrome.tabs.onRemoved.addListener(() => {
+  const pendingCreation = creating;
+  closing = closing.then(async () => {
+    await pendingCreation?.catch(() => {});
+    if (!(await offscreenContexts()).length) return;
+    const tabs = await chrome.tabs.query({ url: "https://x.com/*" });
+    if (!tabs.length) await chrome.offscreen.closeDocument();
+  }).catch(error => console.warn("翻訳エンジンを終了できませんでした。", error));
+});
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message.type === "get-gpu-support") {
