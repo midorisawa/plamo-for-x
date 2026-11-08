@@ -2,6 +2,8 @@ import { glossaryTerms, withGlossaryLock } from "./glossary.js";
 
 const offscreenPage = "offscreen.html";
 let creating;
+let gpuCheck;
+let selectedTerms;
 let iconUpdate = Promise.resolve();
 
 function offscreenContexts() {
@@ -31,8 +33,17 @@ function startThemeObserver() {
   updateToolbarIcon().catch(error => console.warn("アイコンを更新できませんでした。", error));
 }
 
-chrome.runtime.onInstalled.addListener(startThemeObserver);
-chrome.runtime.onStartup.addListener(startThemeObserver);
+function initializeExtension() {
+  allowGpuCacheAccess().catch(() => {});
+  startThemeObserver();
+}
+
+function allowGpuCacheAccess() {
+  return chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
+}
+
+chrome.runtime.onInstalled.addListener(initializeExtension);
+chrome.runtime.onStartup.addListener(initializeExtension);
 
 function updateToolbarIcon(dark) {
   const update = iconUpdate.then(async () => {
@@ -49,6 +60,9 @@ function updateToolbarIcon(dark) {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && (changes.glossaries || changes.selectedGlossaryIds)) {
+    selectedTerms = undefined;
+  }
   if (area === "local" && changes.enabled) {
     updateToolbarIcon().catch(error => console.warn("アイコンを更新できませんでした。", error));
     if (changes.enabled.newValue === false) {
@@ -87,11 +101,16 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
   if (sender.tab && message.type === "get-glossary-terms") {
-    (async () => {
-      const { glossaries = [], selectedGlossaryIds = [] } =
-        await chrome.storage.local.get(["glossaries", "selectedGlossaryIds"]);
-      return { terms: glossaryTerms(glossaries, selectedGlossaryIds) };
-    })().then(respond, error => respond({ error: error.message }));
+    if (!selectedTerms) {
+      const request = chrome.storage.local.get(["glossaries", "selectedGlossaryIds"])
+        .then(({ glossaries = [], selectedGlossaryIds = [] }) =>
+          ({ terms: glossaryTerms(glossaries, selectedGlossaryIds) }));
+      selectedTerms = request;
+      request.catch(() => {
+        if (selectedTerms === request) selectedTerms = undefined;
+      });
+    }
+    selectedTerms.then(respond, error => respond({ error: error.message }));
     return true;
   }
   if (message.type === "set-glossary-selection" && sender.url?.split("#")[0] === chrome.runtime.getURL("options.html")) {
@@ -107,9 +126,18 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
   if (message.type === "get-gpu-support") {
-    ensureOffscreen()
-      .then(() => chrome.runtime.sendMessage({ type: "check-engine-gpu" }))
-      .then(respond, () => respond(false));
+    gpuCheck ??= (async () => {
+      await allowGpuCacheAccess().catch(() => {});
+      const { gpuSupport } = await chrome.storage.session.get("gpuSupport");
+      if (typeof gpuSupport === "boolean") return gpuSupport;
+      await ensureOffscreen();
+      const supported = await chrome.runtime.sendMessage({ type: "check-engine-gpu" });
+      if (typeof supported === "boolean") {
+        await chrome.storage.session.set({ gpuSupport: supported }).catch(() => {});
+      }
+      return supported === true;
+    })().finally(() => { gpuCheck = undefined; });
+    gpuCheck.then(respond, () => respond(false));
     return true;
   }
   if (message.type === "warm-translation" && sender.tab) {

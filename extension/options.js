@@ -124,15 +124,15 @@ autoTranslate.addEventListener("change", () => applySetting("autoTranslate", aut
 
 const settingsKeys = ["targetLanguage", "sourceLanguages", "inferenceMode", "autoTranslate"];
 let settingsRefresh = 0;
-let gpuSupport;
 
 async function refreshSettings() {
   const refresh = ++settingsRefresh;
-  const { targetLanguage, sourceLanguages, inferenceMode, autoTranslate: automatic } =
-    await chrome.storage.local.get(settingsKeys);
+  const [{ targetLanguage, sourceLanguages, inferenceMode, autoTranslate: automatic }, { gpuSupport }] =
+    await Promise.all([chrome.storage.local.get(settingsKeys), chrome.storage.session.get("gpuSupport")]);
   const explicitMode = inferenceMode === "gpu" || inferenceMode === "cpu";
   const gpu = (!explicitMode || typeof automatic !== "boolean") &&
-    await (gpuSupport ??= chrome.runtime.sendMessage({ type: "get-gpu-support" }).catch(() => false)) === true;
+    (typeof gpuSupport === "boolean" ? gpuSupport :
+      await chrome.runtime.sendMessage({ type: "get-gpu-support" }).catch(() => false)) === true;
   if (refresh !== settingsRefresh) return;
   languageSelect.value = translationLanguage(targetLanguage);
   for (const checkbox of sourceInputs) checkbox.checked = sourceLanguages?.includes(checkbox.value) ?? true;
@@ -151,7 +151,7 @@ try {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && settingsKeys.some(key => key in changes)) {
+  if ((area === "local" && settingsKeys.some(key => key in changes)) || (area === "session" && changes.gpuSupport)) {
     refreshSettings().catch(() => {});
   }
 });

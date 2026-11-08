@@ -68,7 +68,7 @@ async function translate(text, target, mode, model, glossary, onPartial) {
   }
   await prepare(mode, model);
   const result = await runWorker(worker, { text, target, glossary }, onPartial);
-  if (result.error) resetWorker();
+  if (result.error && !result.inputTooLong) resetWorker();
   else keepWorkerReady();
   return result;
 }

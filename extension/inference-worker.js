@@ -54,7 +54,10 @@ self.onmessage = async ({ data: { text, model, target, mode, glossary = [] } }) 
       `<|plamo:index|>${source}<|plamo:item|>${target}`).join("") : "";
     const prompt = `<|plamo:tag|>dataset<|plamo:msg|>translation${terms}<|plamo:tag|>input<|plamo:msg|>${text}<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>${target}<|plamo:msg|>`;
     const space = await call("start_translation", ["string"], [prompt]);
-    if (space === -2) throw new Error("投稿が長すぎるため翻訳できません。");
+    if (space === -2) {
+      self.postMessage({ error: "投稿が長すぎるため翻訳できません。", inputTooLong: true });
+      return;
+    }
     if (space < 0) throw new Error("原文を処理できませんでした。");
 
     const decoder = new TextDecoder();

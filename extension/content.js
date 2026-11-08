@@ -104,9 +104,10 @@ function updateAutoTranslate(enabled) {
   autoTranslate = enabled === true;
   autoQueue.clear();
   if (!autoTranslate) return;
-  for (const root of document.querySelectorAll(targetSelector)) {
+  for (const panel of document.querySelectorAll(".sns-translator")) {
+    const root = panel.closest(targetSelector);
     const state = states.get(root);
-    if (state && !state.attempted && !state.prefersNativeDisplay() &&
+    if (state?.panel === panel && !state.attempted && !state.prefersNativeDisplay() &&
         nativeSelections.get(root) !== (state.post.id ?? null)) {
       autoQueue.add(state);
     }
@@ -475,7 +476,9 @@ function mount(root) {
     }
     function finish(result) {
       const partial = result.partial !== undefined;
-      if (!panel.isConnected || !matches(post, readTarget(root))) return;
+      if (!panel.isConnected || !post.body.isConnected || states.get(root) !== state) return;
+      // 途中の訳文はDOM監視によるパネルの更新に任せ、確定時に本文を照合する
+      if (!partial && !matches(post, readTarget(root))) return;
       if (state.displayChoice !== displayChoice()) {
         mount(root);
         return;
@@ -611,10 +614,11 @@ function updateTargetLanguage(saved) {
   const target = preferredTranslationLanguage(saved);
   if (target === targetLanguage) return;
   targetLanguage = target;
-  document.querySelectorAll(targetSelector).forEach(mount);
+  if (translationEnabled) document.querySelectorAll(targetSelector).forEach(mount);
 }
 
 let autoTranslatePreference;
+let gpuSupport;
 function applyAutoTranslatePreference(saved) {
   autoTranslatePreference = saved;
   if (!translationEnabled) return;
@@ -622,8 +626,14 @@ function applyAutoTranslatePreference(saved) {
     updateAutoTranslate(saved);
     return;
   }
+  if (typeof gpuSupport === "boolean") {
+    updateAutoTranslate(gpuSupport);
+    return;
+  }
   chrome.runtime.sendMessage({ type: "get-gpu-support" }).then(gpu => {
-    if (translationEnabled && typeof autoTranslatePreference !== "boolean") updateAutoTranslate(gpu === true);
+    if (translationEnabled && typeof autoTranslatePreference !== "boolean" && typeof gpuSupport !== "boolean") {
+      updateAutoTranslate(gpu === true);
+    }
   }).catch(() => {});
 }
 
@@ -662,8 +672,12 @@ function setTranslationEnabled(enabled) {
   for (const finish of pending.values()) finish({ error: "投稿の翻訳は無効です。" });
 }
 
-chrome.storage.local.get(["enabled", "targetLanguage", "sourceLanguages", "autoTranslate"])
-  .then(settings => {
+Promise.all([
+  chrome.storage.local.get(["enabled", "targetLanguage", "sourceLanguages", "autoTranslate"]),
+  Promise.resolve().then(() => chrome.storage.session.get("gpuSupport")).catch(() => ({})),
+])
+  .then(([settings, session]) => {
+    gpuSupport = session.gpuSupport;
     sourceLanguages = Array.isArray(settings.sourceLanguages) ? settings.sourceLanguages : null;
     updateTargetLanguage(settings.targetLanguage);
     applyAutoTranslatePreference(settings.autoTranslate);
@@ -674,6 +688,10 @@ chrome.storage.local.get(["enabled", "targetLanguage", "sourceLanguages", "autoT
     setTranslationEnabled(true);
   });
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "session" && changes.gpuSupport) {
+    gpuSupport = changes.gpuSupport.newValue;
+    if (typeof autoTranslatePreference !== "boolean") applyAutoTranslatePreference(autoTranslatePreference);
+  }
   if (area !== "local") return;
   if (changes.enabled?.newValue === false) setTranslationEnabled(false);
   if (changes.glossaries || changes.selectedGlossaryIds) {
@@ -693,13 +711,20 @@ document.addEventListener("visibilitychange", () => {
   if (document.querySelector(".sns-translator")) warmTranslation();
   drainAutoQueue();
 });
+let readyQuoteParents = new Set();
 document.addEventListener("sns-translator-quote-ready", event => {
   if (!translationEnabled) return;
   const id = event.detail;
   if (typeof id !== "string" || !/^\d+$/.test(id)) return;
-  for (const article of document.querySelectorAll(`${postSelector}:has(a[href$="/status/${id}"] time)`)) {
-    article.querySelectorAll(quoteSelector).forEach(mount);
-  }
+  if (!readyQuoteParents.size) queueMicrotask(() => {
+    const ids = readyQuoteParents;
+    readyQuoteParents = new Set();
+    if (!translationEnabled) return;
+    for (const article of document.querySelectorAll(postSelector)) {
+      if (ids.has(readPostId(article))) article.querySelectorAll(quoteSelector).forEach(mount);
+    }
+  });
+  readyQuoteParents.add(id);
 });
 const postObserver = new MutationObserver(records => {
   const targets = new Set();
