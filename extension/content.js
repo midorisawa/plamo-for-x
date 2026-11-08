@@ -10,7 +10,11 @@ const iconUrl = chrome.runtime.getURL("icons/local-translator.svg");
 const states = new WeakMap();
 const originalLanguages = new WeakMap();
 const nativeSelections = new WeakMap();
+const postDisplayChoices = new Map();
+const nativeDisplayAttempts = new WeakMap();
 const nativeRestorations = new WeakMap();
+const renamedGrokButtons = new WeakMap();
+const grokButtonLabel = "Grok訳を表示";
 const pending = new Map();
 const autoQueue = new Set();
 const manualQueue = new Set();
@@ -102,7 +106,8 @@ function updateAutoTranslate(enabled) {
   if (!autoTranslate) return;
   for (const root of document.querySelectorAll(targetSelector)) {
     const state = states.get(root);
-    if (state && !state.attempted && nativeSelections.get(root) !== (state.post.id ?? null)) {
+    if (state && !state.attempted && !state.prefersNativeDisplay() &&
+        nativeSelections.get(root) !== (state.post.id ?? null)) {
       autoQueue.add(state);
     }
   }
@@ -125,7 +130,7 @@ function nativeTranslationControl(body, root) {
     const candidate = row?.matches(".sns-translator") ? row.previousElementSibling : row;
     if (!candidate || candidate.querySelector(`${textSelector}, ${bioSelector}`)) continue;
     const button = [...candidate.querySelectorAll("button")].find(control =>
-      /^(原文を表示|Show original|翻訳を表示|Show translation)$/i.test(control.textContent.trim()));
+      /^(原文を表示|Show original|翻訳を表示|Show translation|Grok訳を表示)$/i.test(control.textContent.trim()));
     if (button) return { button, row: candidate, translated: /^(原文を表示|Show original)$/i.test(button.textContent.trim()) };
   }
 }
@@ -203,26 +208,74 @@ function canTranslate(source, target) {
       (source === null ? sourceLanguages.length > 0 : sourceLanguages.includes(source || "und")));
 }
 
+function renameGrokButton(button) {
+  if (button?.textContent.trim() !== "翻訳を表示") return;
+  const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.data.trim() !== "翻訳を表示") continue;
+    const ariaLabel = button.getAttribute("aria-label");
+    renamedGrokButtons.set(button, { node, text: node.data, ariaLabel });
+    node.data = grokButtonLabel;
+    if (ariaLabel === "翻訳を表示") button.setAttribute("aria-label", grokButtonLabel);
+    break;
+  }
+}
+
+function setPostDisplayChoice(id, choice, root) {
+  if (!id || postDisplayChoices.get(id)?.mode === choice) return;
+  postDisplayChoices.set(id, { mode: choice });
+  queueMicrotask(() => {
+    for (const other of document.querySelectorAll(`${postSelector}, ${quoteSelector}`)) {
+      if (other !== root && (states.get(other)?.post.id ?? readPostId(other)) === id) mount(other);
+    }
+  });
+}
+
 function mount(root) {
   if (!translationEnabled) return;
   const target = targetLanguage;
   let post = readTarget(root);
   const previous = states.get(root);
   if (previous?.revealing && previous.panel.isConnected) return;
+  const attempt = nativeDisplayAttempts.get(root);
+  if (attempt?.pending) return;
+  renameGrokButton(post?.native?.button);
   const isNote = root.matches(noteSelector);
   const isProfile = root.matches(profileSelector);
+  const displayId = !isNote && !isProfile ? post?.id : undefined;
+  const selection = postDisplayChoices.get(displayId);
+  const displayChoice = () => postDisplayChoices.get(displayId)?.mode;
+  const prefersNativeDisplay = () => displayChoice() === "original" || displayChoice() === "grok";
+  const showGrok = displayChoice() === "grok";
+  const restoreNative = prefersNativeDisplay() && post?.native && post.native.translated !== showGrok &&
+    !(attempt?.selection === selection && attempt?.post.native.button === post.native.button && matches(attempt.post, post));
   const collapsed = !isNote && !isProfile && (post?.shortened || [...root.querySelectorAll(showMoreSelector)]
     .some(control => control.closest(targetSelector) === root));
   const known = originalLanguages.get(root);
   const source = post && (post.native?.translated || (isProfile && !post.language))
     ? (known?.id === post.id && known?.text === post.text ? known.language : null)
     : translationLanguage(post?.language);
-  if (post && canTranslate(source, target) && previous?.target === target &&
+  if (!restoreNative && post && canTranslate(source, target) && previous?.target === target &&
+      previous.displayChoice === displayChoice() &&
       previous.collapsed === collapsed && matches(previous.post, post) && previous.panel.isConnected) return;
   previous?.panel.remove();
   autoQueue.delete(previous);
   manualQueue.delete(previous);
   states.delete(root);
+  if (restoreNative) {
+    const attempt = { post, selection, pending: true };
+    nativeDisplayAttempts.set(root, attempt);
+    switchNativeTranslation(root, post, showGrok).then(current => {
+      attempt.pending = false;
+      if (!translationEnabled) {
+        if (current?.native?.button) switchNativeTranslation(root, current, !showGrok);
+        return;
+      }
+      if (current && !showGrok && current.native?.button) nativeRestorations.set(root, current);
+      if (root.isConnected) mount(root);
+    });
+    return;
+  }
   if (!post || !canTranslate(source, target)) return;
 
   const panel = document.createElement("div");
@@ -251,13 +304,15 @@ function mount(root) {
   });
   post.body.before(panel);
   post.grokRow?.classList.add("sns-translator-native-row");
-  const state = { root, post, panel, target, collapsed, label, output, references, translate: runTranslation };
+  const state = { root, post, panel, target, collapsed, label, output, references,
+    displayChoice: displayChoice(), prefersNativeDisplay, translate: runTranslation };
   states.set(root, state);
   warmTranslation();
   button.addEventListener("pointerenter", warmTranslation);
   let translation = null;
   let links = [];
-  const expansion = !collapsed && !isNote && !isProfile && expandedPreview?.id === post.id && expandedPreview?.target === target
+  const expansion = !prefersNativeDisplay() && !collapsed && !isNote && !isProfile &&
+    expandedPreview?.id === post.id && expandedPreview?.target === target
     ? expandedPreview : undefined;
   let keepingPreview = Boolean(expansion);
   if (expansion) {
@@ -284,9 +339,15 @@ function mount(root) {
 
   button.addEventListener("click", event => {
     event.stopPropagation();
+    if (displayId) {
+      state.displayChoice = translation !== null && panel.hasAttribute("data-show-translation") ? "original" : "plamo";
+      setPostDisplayChoice(displayId, state.displayChoice, root);
+    }
     runTranslation(false);
   });
-  if (expansion) {
+  if (prefersNativeDisplay()) {
+    if (!showGrok) showTranslation(false);
+  } else if (expansion || displayChoice() === "plamo") {
     runTranslation(false);
   } else if (autoTranslate && nativeSelections.get(root) !== (post.id ?? null)) {
     autoQueue.add(state);
@@ -295,8 +356,10 @@ function mount(root) {
 
   async function runTranslation(automatic) {
     if (!translationEnabled || !panel.isConnected || button.disabled) return;
+    if (automatic && prefersNativeDisplay()) return;
     if (!automatic && translation !== null) {
-      showTranslation(!panel.hasAttribute("data-show-translation"));
+      const show = !panel.hasAttribute("data-show-translation");
+      showTranslation(show);
       return;
     }
     if (!automatic && activeTranslations) {
@@ -349,7 +412,8 @@ function mount(root) {
         panel.removeAttribute("data-keep-grok");
         button.disabled = false;
         output.textContent = "原文を取得できませんでした。";
-        if (target !== targetLanguage || !matches(post, readTarget(root)) || !panel.isConnected) mount(root);
+        if (state.displayChoice !== displayChoice() || target !== targetLanguage ||
+            !matches(post, readTarget(root)) || !panel.isConnected) mount(root);
         return;
       }
       state.post = original;
@@ -359,6 +423,7 @@ function mount(root) {
       originalLanguages.set(root, { id: post.id, text: post.text, language });
       post = state.post = original;
       post.body.before(panel);
+      renameGrokButton(post.native?.button);
       if (!canTranslate(language, target) || target !== targetLanguage) {
         nativeRestorations.delete(root);
         if (original.native?.button) await switchNativeTranslation(root, original, true);
@@ -367,6 +432,10 @@ function mount(root) {
         return;
       }
       state.revealing = false;
+      if (state.displayChoice !== displayChoice()) {
+        mount(root);
+        return;
+      }
       if (!automatic) button.focus({ preventScroll: true });
     } else if (isProfile) {
       profileLanguage = await detectProfileLanguage(post);
@@ -397,6 +466,10 @@ function mount(root) {
     function finish(result) {
       const partial = result.partial !== undefined;
       if (!panel.isConnected || !matches(post, readTarget(root))) return;
+      if (state.displayChoice !== displayChoice()) {
+        mount(root);
+        return;
+      }
       if (result.retry) {
         state.attempted = false;
         button.disabled = false;
@@ -512,6 +585,9 @@ document.addEventListener("click", event => {
   if (!root) return;
   const post = readTarget(root);
   if (post?.native?.button !== button) return;
+  if (root.matches(postSelector) && post.id) {
+    setPostDisplayChoice(post.id, post.native.translated ? "original" : "grok", root);
+  }
   nativeRestorations.delete(root);
   nativeSelections.set(root, post.id ?? null);
   autoQueue.delete(states.get(root));
@@ -560,8 +636,14 @@ function setTranslationEnabled(enabled) {
   for (const root of document.querySelectorAll(targetSelector)) {
     const original = nativeRestorations.get(root);
     nativeRestorations.delete(root);
-    const current = original && readTarget(root);
-    if (current?.native?.button && matchesContent(original, current)) {
+    const current = readTarget(root);
+    const button = current?.native?.button;
+    const renamed = button && renamedGrokButtons.get(button);
+    if (renamed?.node.data === grokButtonLabel) renamed.node.data = renamed.text;
+    if (renamed && button.getAttribute("aria-label") === grokButtonLabel) {
+      button.setAttribute("aria-label", renamed.ariaLabel);
+    }
+    if (original && button && matchesContent(original, current)) {
       switchNativeTranslation(root, current, true);
     }
   }
