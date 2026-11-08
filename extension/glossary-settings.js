@@ -159,7 +159,12 @@ export function setupGlossarySettings(popup) {
     enabled.checked = entry.enabled !== false;
     bidirectional.checked = entry.bidirectional === true;
     const arrow = row.querySelector(".glossary-direction");
-    const showDirection = () => { arrow.textContent = bidirectional.checked ? "↔" : "→"; };
+    const [sourceLabel, targetLabel] = row.querySelectorAll(".glossary-term-pair label span");
+    const showDirection = () => {
+      arrow.textContent = bidirectional.checked ? "↔" : "→";
+      sourceLabel.textContent = bidirectional.checked ? "用語1" : "原語";
+      targetLabel.textContent = bidirectional.checked ? "用語2" : "訳語";
+    };
     showDirection();
     bidirectional.addEventListener("change", showDirection);
     row.querySelector("button").addEventListener("click", () => {
@@ -303,7 +308,8 @@ export function setupGlossarySettings(popup) {
       const sourceValid = validGlossaryTerm(source);
       if (!sourceValid || !validGlossaryTerm(target)) {
         const input = rows.children[index].querySelectorAll("input")[sourceValid ? 1 : 0];
-        const missing = sourceValid ? "訳語を入力してください。" : "原語を入力してください。";
+        const label = input.closest("label").querySelector("span").textContent;
+        const missing = `${label}を入力してください。`;
         showValidation(input, input.value.trim() ? "用語に使えない文字が含まれています。" : missing);
         return;
       }
