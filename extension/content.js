@@ -2,7 +2,7 @@ const postSelector = 'article[data-testid="tweet"]';
 const textSelector = '[data-testid="tweetText"]';
 const noteSelector = '[data-testid="birdwatch-pivot"]';
 const bioSelector = '[data-testid="UserDescription"]';
-const profileSelector = `main div:has(> div > ${bioSelector})`;
+const profileSelector = `main:has(${bioSelector})`;
 const quoteSelector = `${postSelector} div[role="link"]:has([data-testid="User-Name"])`;
 const showMoreSelector = '[data-testid="tweet-text-show-more-link"]';
 const targetSelector = `${postSelector}, ${noteSelector}, ${quoteSelector}, ${profileSelector}`;
@@ -144,12 +144,12 @@ function readPostId(root) {
 function readTarget(root) {
   const isNote = root.matches(noteSelector);
   const isProfile = root.matches(profileSelector);
-  const body = isProfile ? root.querySelector(`:scope > div > ${bioSelector}`)
+  const body = isProfile ? root.querySelector(bioSelector)
     : isNote ? root.querySelector(":scope > div[dir]") : [...root.querySelectorAll(textSelector)]
     .find(node => node.closest(targetSelector) === root);
   const text = body?.textContent.trim();
   if (!text) return null;
-  const native = nativeTranslationControl(body, root);
+  const native = nativeTranslationControl(body, isProfile ? body.parentElement.parentElement : root);
 
   const article = root.closest(postSelector);
   const isQuote = root.matches(quoteSelector);
@@ -236,7 +236,8 @@ function mount(root) {
   const target = targetLanguage;
   let post = readTarget(root);
   const previous = states.get(root);
-  if (previous?.revealing && previous.panel.isConnected) return;
+  if (previous?.revealing && (previous.panel.isConnected || (post && root.matches(profileSelector) &&
+      previous.post.id === post.id))) return;
   const attempt = nativeDisplayAttempts.get(root);
   if (attempt?.pending) return;
   renameGrokButton(post?.native?.button);
@@ -399,11 +400,16 @@ function mount(root) {
       state.revealing = true;
       const original = await switchNativeTranslation(root, post, false);
       if (original?.native?.button) nativeRestorations.set(root, original);
+      if (isProfile && original?.body.isConnected && translationEnabled && states.get(root) === state) {
+        original.body.before(panel);
+      }
       if (!panel.isConnected) {
         if (!translationEnabled && original?.native?.button) {
           nativeRestorations.delete(root);
           await switchNativeTranslation(root, original, true);
         }
+        state.revealing = false;
+        if (isProfile && root.isConnected) mount(root);
         return;
       }
       if (!original) {
@@ -418,7 +424,11 @@ function mount(root) {
       }
       state.post = original;
       const language = isProfile ? await detectProfileLanguage(original) : translationLanguage(original.language);
-      if (!panel.isConnected) return;
+      if (!panel.isConnected || (isProfile && !matches(original, readTarget(root)))) {
+        state.revealing = false;
+        if (isProfile && root.isConnected) mount(root);
+        return;
+      }
       if (isProfile) profileLanguage = language;
       originalLanguages.set(root, { id: post.id, text: post.text, language });
       post = state.post = original;
