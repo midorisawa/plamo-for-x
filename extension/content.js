@@ -9,6 +9,7 @@ const targetSelector = `${postSelector}, ${noteSelector}, ${quoteSelector}, ${pr
 const iconUrl = chrome.runtime.getURL("icons/local-translator.svg");
 const states = new WeakMap();
 const originalLanguages = new WeakMap();
+const noteLanguages = new WeakMap();
 const nativeSelections = new WeakMap();
 const postDisplayChoices = new Map();
 const postModelChoices = new Map();
@@ -242,6 +243,25 @@ function canTranslate(source, target) {
       (source === null ? sourceLanguages.length > 0 : sourceLanguages.includes(source || "und")));
 }
 
+async function detectLanguage(text) {
+  if (!text) return "";
+  const detected = await chrome.i18n.detectLanguage(text).catch(() => null);
+  return translationLanguage(detected?.languages[0]?.language);
+}
+
+function noteLanguage(post) {
+  const { text } = translationInput(post.body, true);
+  const known = noteLanguages.get(post.body);
+  if (known?.text === text) return known;
+  const entry = { text };
+  entry.ready = detectLanguage(text).then(language => {
+    entry.language = language;
+    return language;
+  });
+  noteLanguages.set(post.body, entry);
+  return entry;
+}
+
 function renameGrokButton(button) {
   if (button?.textContent.trim() !== "翻訳を表示") return;
   const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
@@ -366,10 +386,16 @@ function mount(root) {
   const collapsed = !isNote && !isProfile && (post?.shortened || [...root.querySelectorAll(showMoreSelector)]
     .some(control => control.closest(targetSelector) === root));
   const known = originalLanguages.get(root);
-  const source = post && (post.native?.translated || (isProfile && !post.language))
+  const needsNoteLanguage = isNote && post && !post.native?.translated &&
+    (!post.language || post.language === "und");
+  const previousDetection = needsNoteLanguage && noteLanguages.get(post.body);
+  const detectedNote = needsNoteLanguage && noteLanguage(post);
+  const source = needsNoteLanguage
+    ? detectedNote.language
+    : post && (post.native?.translated || (isProfile && !post.language))
     ? (known?.id === post.id && known?.text === post.text ? known.language : null)
     : translationLanguage(post?.language);
-  if (!restoreNative && post && canTranslate(source, target) && previous?.target === target &&
+  if (!restoreNative && post && source !== undefined && canTranslate(source, target) && previous?.target === target &&
       previous.displayChoice === displayChoice() && previous.modelId === modelId &&
       previous.collapsed === collapsed && matches(previous.post, post) && previous.panel.isConnected) return;
   previous?.panel.remove();
@@ -389,6 +415,16 @@ function mount(root) {
       if (current && !showGrok && current.native?.button) nativeRestorations.set(root, current);
       if (root.isConnected) mount(root);
     });
+    return;
+  }
+  if (needsNoteLanguage && source === undefined) {
+    if (detectedNote !== previousDetection) {
+      const { body } = post;
+      detectedNote.ready.then(() => {
+        const currentRoot = body.closest(noteSelector);
+        if (currentRoot?.isConnected) mount(currentRoot);
+      });
+    }
     return;
   }
   if (!post || !canTranslate(source, target)) return;
@@ -541,11 +577,10 @@ function mount(root) {
     state.attempted = true;
     state.glossaryRevision = glossaryRevision;
     button.disabled = true;
-    let profileLanguage = "";
+    let detectedLanguage = needsNoteLanguage ? source : "";
     async function detectProfileLanguage(original) {
       if (original.language) return translationLanguage(original.language);
-      const detected = await chrome.i18n.detectLanguage(original.text).catch(() => null);
-      return translationLanguage(detected?.languages[0]?.language);
+      return detectLanguage(original.text);
     }
     if (!keepingPreview) output.textContent = "";
     if (post.native?.translated) {
@@ -582,13 +617,15 @@ function mount(root) {
         return;
       }
       state.post = original;
-      const language = isProfile ? await detectProfileLanguage(original) : translationLanguage(original.language);
-      if (!panel.isConnected || (isProfile && !matches(original, readTarget(root)))) {
+      let language = translationLanguage(original.language);
+      if (isProfile) language = await detectProfileLanguage(original);
+      if (isNote && (!language || language === "und")) language = await noteLanguage(original).ready;
+      if (!panel.isConnected || ((isProfile || isNote) && !matches(original, readTarget(root)))) {
         state.revealing = false;
-        if (isProfile && root.isConnected) mount(root);
+        if ((isProfile || isNote) && root.isConnected) mount(root);
         return;
       }
-      if (isProfile) profileLanguage = language;
+      if (isProfile || isNote) detectedLanguage = language;
       originalLanguages.set(root, { id: post.id, text: post.text, language });
       post = state.post = original;
       post.body.before(panel);
@@ -607,10 +644,10 @@ function mount(root) {
       }
       if (!automatic) button.focus({ preventScroll: true });
     } else if (isProfile) {
-      profileLanguage = await detectProfileLanguage(post);
+      detectedLanguage = await detectProfileLanguage(post);
       if (!panel.isConnected || !matches(post, readTarget(root))) return;
-      originalLanguages.set(root, { id: post.id, text: post.text, language: profileLanguage });
-      if (!canTranslate(profileLanguage, target)) {
+      originalLanguages.set(root, { id: post.id, text: post.text, language: detectedLanguage });
+      if (!canTranslate(detectedLanguage, target)) {
         mount(root);
         return;
       }
@@ -625,7 +662,7 @@ function mount(root) {
       const language = new Intl.DisplayNames(["ja"], { type: "language", fallback: "none" });
       let source;
       try {
-        const tag = profileLanguage || post.language;
+        const tag = detectedLanguage || post.language;
         if (tag && tag !== "und") source = language.of(tag);
       } catch {
         // 言語タグが不正な場合はモデル名だけを表示する
