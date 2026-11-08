@@ -1,4 +1,4 @@
-const defaultCacheLimit = 64 * 1024 * 1024;
+const defaultCacheLimit = 64_000_000;
 const cacheTtl = 30 * 24 * 60 * 60 * 1000;
 const encoder = new TextEncoder();
 let database;
