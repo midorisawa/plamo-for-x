@@ -103,8 +103,8 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .field :is(input, select) { min-width: 0; font-weight: 400; }
 .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
 
-button, select, input, .button-link { font: inherit; color: inherit; }
-button, select, input:is([type="number"], [type="file"], [type="text"]), .button-link {
+button, select, input { font: inherit; color: inherit; }
+button, select, input:is([type="number"], [type="file"], [type="text"]) {
   min-height: 40px;
   max-width: 100%;
   padding: .45rem .75rem;
@@ -135,12 +135,11 @@ button, select, input:is([type="number"], [type="file"], [type="text"]), .button
   .select-control:has(select:disabled)::after { opacity: .6; }
 }
 
-button, summary, .button-link { cursor: pointer; }
-button:not(:disabled):hover, summary:hover, .button-link:hover { background: var(--subtle); }
+button, summary { cursor: pointer; }
+button:not(:disabled):hover, summary:hover { background: var(--subtle); }
 button:disabled, select:disabled, input:disabled { opacity: .6; cursor: default; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 a { color: var(--accent); text-underline-offset: .18em; }
-.button-link { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none; font-weight: 650; }
 .danger { color: var(--danger); }
 
 .check { display: flex; align-items: start; gap: .55rem; padding: .3rem 0; }
@@ -323,25 +322,21 @@ dialog::backdrop { background: #0007; }
 dialog .actions { justify-content: end; margin-top: 1rem; }
 
 .popup { width: 360px; background: var(--surface); }
-.popup body { max-height: 560px; overflow: auto; scroll-padding-bottom: 5rem; }
-.popup .app-header { padding: .75rem 1rem; gap: .5rem; }
+.popup body { max-height: 560px; overflow: auto; }
+.popup .app-header { padding: .75rem 1rem; gap: .5rem; border-bottom: 0; }
 .popup .layout { display: block; padding: 0; }
 .popup .panel { margin: 0; padding: .75rem 1rem; border: 0; border-radius: 0; }
-.popup #translation { padding-bottom: 0; }
-.popup #translation-title { font-size: 1rem; }
+.popup #model { padding-bottom: 0; }
+.popup #model .field-grid { grid-template-columns: minmax(0, 1fr); gap: .6rem; }
+.popup #model-selection-status:empty { display: none; }
+.popup #translation { padding-block: 1.15rem 0; }
+.popup #translation .toggle-row { margin-top: 0; padding: 0; }
 .popup .glossary-workspace { display: block; }
 .popup .glossary-choice { grid-template-columns: minmax(0, 1fr); }
 .popup #glossary-selection-count { margin-top: 0; }
 .popup .glossary-picker-body a { display: inline-block; margin-block: .6rem .1rem; }
-.popup .toggle-row:not(.extension-toggle) { border-top: 1px solid var(--border); }
-.popup .settings-footer {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  padding: .7rem 1rem;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-}
+.popup .settings-footer { padding: .25rem 1rem .9rem; }
+.popup .settings-footer a { font-size: .85rem; }
 .popup #settings-status:not(:empty) { margin-bottom: .5rem; }
 
 @media (max-width: 720px) {

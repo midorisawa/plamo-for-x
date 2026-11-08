@@ -36,8 +36,8 @@
 
     <fieldset id="translation-fields" disabled>
       <section id="translation" class="panel" aria-labelledby="translation-title">
-        <h2 id="translation-title">翻訳</h2>
-        <label class="field">自分の言語
+        <h2 id="translation-title" class="tab-only">翻訳</h2>
+        <label class="field tab-only">自分の言語
           <span class="select-control"><select id="target-language" disabled></select></span>
         </label>
         <label class="toggle-row">
@@ -53,9 +53,9 @@
         </details>
       </section>
 
-      <section id="model" class="panel tab-only" aria-labelledby="model-title">
-        <h2 id="model-title">モデルと使用プロセッサ</h2>
-        <p class="section-description">0.8Bは同梱モデルです。ほかのモデルは追加してから選択できます。</p>
+      <section id="model" class="panel" aria-labelledby="model-title">
+        <h2 id="model-title" class="tab-only">モデルと使用プロセッサ</h2>
+        <p class="section-description tab-only">0.8Bは同梱モデルです。ほかのモデルは追加してから選択できます。</p>
         <div class="field-grid">
           <label class="field">既定の翻訳モデル
             <span class="select-control"><select id="selected-model" disabled><option value="">確認中…</option></select></span>
@@ -70,7 +70,7 @@
           </label>
         </div>
         <p id="model-selection-status" role="status"></p>
-        <section id="model-manager" aria-labelledby="model-manager-title">
+        <section id="model-manager" class="tab-only" aria-labelledby="model-manager-title">
           <h3 id="model-manager-title">モデル管理</h3>
           <p class="section-description">モデルをダウンロードするか、取得済みのQ4_K_M形式のGGUFファイルを取り込みます。8Bと31Bには64ビットWebAssemblyと十分な空きメモリが必要です。31BにはWebGPUも必要です。</p>
           <div id="model-list"></div>
@@ -167,7 +167,7 @@
 
     <footer class="settings-footer">
       <p id="settings-status" role="status">設定を読み込み中…</p>
-      <a class="button-link popup-only" href="options.html" target="_blank" rel="noopener">詳細設定</a>
+      <a class="popup-only" href="options.html" target="_blank" rel="noopener">詳細設定</a>
     </footer>
   </div>
 </main>

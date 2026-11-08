@@ -4,8 +4,10 @@ import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translat
 
 const popup = chrome.extension.getViews({ type: "popup" }).includes(window);
 document.documentElement.classList.toggle("popup", popup);
-if (!popup) {
-  setupModelSettings();
+setupModelSettings(popup);
+if (popup) {
+  document.querySelector("#translation").before(document.querySelector("#model"));
+} else {
   const root = document.documentElement;
   const dismissed = "settings-highlight-dismissed";
   window.addEventListener("hashchange", () => root.classList.remove(dismissed));

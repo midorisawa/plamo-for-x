@@ -38,7 +38,7 @@ async function validationMode(model) {
 export const defaultModel = models[0].id;
 const modelFilename = id => `plamo-3-translate-${id}-Q4_K_M.gguf`;
 const stagedFilename = id => `${modelFilename(id)}.download`;
-export const withModelLock = action => navigator.locks.request("sns-translator-models", action);
+export const withModelLock = (action, options = {}) => navigator.locks.request("sns-translator-models", options, action);
 
 async function modelHandle(id, create) {
   return (await navigator.storage.getDirectory()).getFileHandle(modelFilename(id), { create });

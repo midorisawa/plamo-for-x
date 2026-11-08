@@ -1,7 +1,7 @@
 import { activeModel, cleanStagedModels, defaultModel, deleteModel, downloadModel, effectiveInferenceMode, importModel,
   modelCompatibility, models, modelSource, withModelLock } from "./model.js";
 
-export function setupModelSettings() {
+export function setupModelSettings(popup) {
   const select = document.querySelector("#selected-model");
   const selectionStatus = document.querySelector("#model-selection-status");
   const feedback = document.querySelector("#model-feedback");
@@ -11,7 +11,7 @@ export function setupModelSettings() {
   let busy = false;
   let modelRefresh = 0;
 
-  const rows = models.flatMap(({ id, label, size, bundled }) => {
+  const rows = (popup ? [] : models).flatMap(({ id, label, size, bundled }) => {
     const row = template.content.firstElementChild.cloneNode(true);
     const name = `PLaMo 3 Translate ${label}`;
     row.querySelector("strong").textContent = name;
@@ -89,7 +89,7 @@ export function setupModelSettings() {
       select.replaceChildren(...(options.length ? options : [new Option("モデル未登録", "")]));
       select.value = active?.id ?? "";
       select.disabled = busy || !active;
-      input.disabled = busy;
+      if (!popup) input.disabled = false;
       for (const { id, size, status, download, remove } of rows) {
         const installed = Boolean(available.get(id));
         status.textContent = installed ? `${size}・保存済み` : size;
@@ -110,7 +110,10 @@ export function setupModelSettings() {
     disableControls();
     status.textContent = "";
     try {
-      await withModelLock(action);
+      await withModelLock(lock => {
+        if (!lock) throw new Error("モデル管理の操作が完了してから、もう一度お試しください。");
+        return action();
+      }, { ifAvailable: popup });
       status.textContent = success;
     } catch (error) {
       status.textContent = signal?.aborted ? "ダウンロードを中止しました。" : `操作を完了できませんでした。 ${error.message}`;
@@ -144,18 +147,20 @@ export function setupModelSettings() {
     if (!busy && ((area === "local" && (changes.selectedModel || changes.modelCatalogVersion || changes.inferenceMode)) ||
         (area === "session" && changes.gpuSupport))) refresh();
   });
-  input.addEventListener("change", async () => {
-    const file = input.files[0];
-    if (!file) return;
-    await changeFiles(async () => {
-      feedback.textContent = "モデルを保存中…";
-      await importModel(file);
-    }, "モデルを保存しました。");
-    input.value = "";
-  });
+  if (!popup) {
+    input.addEventListener("change", async () => {
+      const file = input.files[0];
+      if (!file) return;
+      await changeFiles(async () => {
+        feedback.textContent = "モデルを保存中…";
+        await importModel(file);
+      }, "モデルを保存しました。");
+      input.value = "";
+    });
+    cleanStagedModels().catch(error => console.warn("モデルの一時ファイルを削除できませんでした。", error));
+  }
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && !busy) refresh();
   });
-  cleanStagedModels().catch(error => console.warn("モデルの一時ファイルを削除できませんでした。", error));
   refresh();
 }
