@@ -55,9 +55,9 @@
 
       <section id="model" class="panel tab-only" aria-labelledby="model-title">
         <h2 id="model-title">モデルと使用プロセッサ</h2>
-        <p class="section-description">0.8Bは同梱モデルです。2Bを使うには、モデルを追加してから選択します。</p>
+        <p class="section-description">0.8Bは同梱モデルです。ほかのモデルは追加してから選択できます。</p>
         <div class="field-grid">
-          <label class="field">翻訳に使うモデル
+          <label class="field">既定の翻訳モデル
             <span class="select-control"><select id="selected-model" disabled><option value="">確認中…</option></select></span>
           </label>
           <label class="field">使用プロセッサ
@@ -72,11 +72,11 @@
         <p id="model-selection-status" role="status"></p>
         <section id="model-manager" aria-labelledby="model-manager-title">
           <h3 id="model-manager-title">モデル管理</h3>
-          <p class="section-description">2Bをダウンロードするか、取得済みのGGUFファイルを取り込みます。</p>
+          <p class="section-description">モデルをダウンロードするか、取得済みのQ4_K_M形式のGGUFファイルを取り込みます。8Bと31Bには64ビットWebAssemblyと十分な空きメモリが必要です。31BにはWebGPUも必要です。</p>
           <div id="model-list"></div>
           <p id="model-feedback" role="status"></p>
           <div class="model-import">
-            <label class="field">2BのGGUFファイルを取り込む
+            <label class="field">GGUFファイルを取り込む
               <input id="import-model" type="file" accept=".gguf" disabled>
             </label>
           </div>

@@ -1,4 +1,5 @@
-import { activeModel, cleanStagedModels, defaultModel, deleteModel, downloadModel, importModel, models, modelSource, withModelLock } from "./model.js";
+import { activeModel, cleanStagedModels, defaultModel, deleteModel, downloadModel, effectiveInferenceMode, importModel,
+  modelCompatibility, models, modelSource, withModelLock } from "./model.js";
 
 export function setupModelSettings() {
   const select = document.querySelector("#selected-model");
@@ -70,18 +71,20 @@ export function setupModelSettings() {
     for (const { download, remove } of rows) download.disabled = remove.disabled = true;
   }
 
-  async function readActiveModel(available) {
-    const { selectedModel } = await chrome.storage.local.get("selectedModel");
-    return activeModel(selectedModel, available);
+  function readMode(inferenceMode) {
+    return effectiveInferenceMode(inferenceMode,
+      () => chrome.runtime.sendMessage({ type: "get-gpu-support" }).catch(() => false));
   }
 
   async function refresh() {
     const refreshId = ++modelRefresh;
     try {
       const available = new Map(await Promise.all(models.map(async ({ id }) => [id, await modelSource(id)])));
-      const active = await readActiveModel(available);
+      const { selectedModel, inferenceMode } = await chrome.storage.local.get(["selectedModel", "inferenceMode"]);
+      const mode = await readMode(inferenceMode);
+      const active = await activeModel(selectedModel, available, mode);
       if (refreshId !== modelRefresh || busy) return;
-      const options = models.filter(({ id }) => available.get(id))
+      const options = models.filter(model => available.get(model.id) && !modelCompatibility(model, mode))
         .map(({ id, label }) => new Option(`PLaMo 3 Translate ${label}`, id));
       select.replaceChildren(...(options.length ? options : [new Option("モデル未登録", "")]));
       select.value = active?.id ?? "";
@@ -119,10 +122,11 @@ export function setupModelSettings() {
 
   function changeFiles(action, success, signal) {
     return run(async () => {
-      const previous = await readActiveModel();
+      const { selectedModel } = await chrome.storage.local.get("selectedModel");
+      const previous = await activeModel(selectedModel);
       await action();
       const id = previous && await modelSource(previous.id) ? previous.id : defaultModel;
-      await chrome.storage.local.set({ selectedModel: id });
+      await chrome.storage.local.set({ selectedModel: id, modelCatalogVersion: Date.now() });
     }, feedback, success, signal);
   }
 
@@ -130,11 +134,15 @@ export function setupModelSettings() {
     const selectedModel = select.value;
     run(async () => {
       if (!await modelSource(selectedModel)) throw new Error("選択したモデルは削除されました。");
+      const { inferenceMode } = await chrome.storage.local.get("inferenceMode");
+      const error = modelCompatibility(models.find(({ id }) => id === selectedModel), await readMode(inferenceMode));
+      if (error) throw new Error(error);
       await chrome.storage.local.set({ selectedModel });
     }, selectionStatus);
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (!busy && area === "local" && changes.selectedModel) refresh();
+    if (!busy && ((area === "local" && (changes.selectedModel || changes.modelCatalogVersion || changes.inferenceMode)) ||
+        (area === "session" && changes.gpuSupport))) refresh();
   });
   input.addEventListener("change", async () => {
     const file = input.files[0];

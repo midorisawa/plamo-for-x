@@ -3,9 +3,10 @@ import { checkGpu } from "./gpu.js";
 
 let runtime;
 
-async function loadModel(blob, gpu) {
-  const { default: createRuntime } = gpu ? await import("./runtime/gpu/plamo.mjs") :
-    await import("./runtime/plamo.mjs");
+async function loadModel(blob, gpu, modelId) {
+  const large = modelId === "8b" || modelId === "31b";
+  const directory = large ? (gpu ? "gpu64/" : "cpu64/") : (gpu ? "gpu/" : "");
+  const { default: createRuntime } = await import(`./runtime/${directory}plamo.mjs`);
   // llama.cppは正常なモデル読み込みの進捗も標準エラーに出力する
   const module = await createRuntime({ printErr: message => console.debug(message) });
   const call = (name, types = [], args = []) =>
@@ -13,7 +14,8 @@ async function loadModel(blob, gpu) {
   module.FS.mkdir("/model");
   module.FS.mount(module.WORKERFS, { blobs: [{ name: "translate.gguf", data: blob }] }, "/model");
   try {
-    if (await call("load_model", ["number"], [-1]) !== 0) {
+    const gpuLayers = modelId === "31b" ? 24 : -1;
+    if (await call("load_model", ["number"], [gpuLayers]) !== 0) {
       throw new Error("モデルを読み込めませんでした。");
     }
   } finally {
@@ -22,26 +24,26 @@ async function loadModel(blob, gpu) {
   return { module, call };
 }
 
-async function prepareModel(model, mode) {
+async function prepareModel(model, mode, modelId) {
   let blob = model;
   if (model.url) {
     const response = await fetch(model.url);
     if (!response.ok) throw new Error("同梱モデルを開けませんでした。");
     blob = await response.blob();
   }
-  if (mode === "cpu") return loadModel(blob, false);
+  if (mode === "cpu") return loadModel(blob, false, modelId);
 
   try {
     await checkGpu();
-    return await loadModel(blob, true);
+    return await loadModel(blob, true, modelId);
   } catch (error) {
     throw new Error(`GPUを使用できません。 ${error.message}`);
   }
 }
 
-self.onmessage = async ({ data: { text, model, target, mode, glossary = [] } }) => {
+self.onmessage = async ({ data: { text, model, modelId, target, mode, glossary = [] } }) => {
   try {
-    runtime ??= await prepareModel(model, mode);
+    runtime ??= await prepareModel(model, mode, modelId);
     if (text === undefined) {
       self.postMessage({ ready: true });
       return;

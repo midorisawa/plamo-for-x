@@ -1,10 +1,12 @@
 import { glossaryTerms, withGlossaryLock } from "./glossary.js";
+import { activeModel, effectiveInferenceMode, modelCompatibility, models, modelSource } from "./model.js";
 
 const offscreenPage = "offscreen.html";
 let creating;
 let gpuCheck;
 let selectedTerms;
 let iconUpdate = Promise.resolve();
+const startingTranslations = new Map();
 
 function offscreenContexts() {
   return chrome.runtime.getContexts({
@@ -40,6 +42,20 @@ function initializeExtension() {
 
 function allowGpuCacheAccess() {
   return chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
+}
+
+function gpuAvailable() {
+  return gpuCheck ??= (async () => {
+    await allowGpuCacheAccess().catch(() => {});
+    const { gpuSupport } = await chrome.storage.session.get("gpuSupport");
+    if (typeof gpuSupport === "boolean") return gpuSupport;
+    await ensureOffscreen();
+    const supported = await chrome.runtime.sendMessage({ type: "check-engine-gpu" });
+    if (typeof supported === "boolean") {
+      await chrome.storage.session.set({ gpuSupport: supported }).catch(() => {});
+    }
+    return supported === true;
+  })().finally(() => { gpuCheck = undefined; });
 }
 
 chrome.runtime.onInstalled.addListener(initializeExtension);
@@ -126,18 +142,22 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
   if (message.type === "get-gpu-support") {
-    gpuCheck ??= (async () => {
-      await allowGpuCacheAccess().catch(() => {});
-      const { gpuSupport } = await chrome.storage.session.get("gpuSupport");
-      if (typeof gpuSupport === "boolean") return gpuSupport;
-      await ensureOffscreen();
-      const supported = await chrome.runtime.sendMessage({ type: "check-engine-gpu" });
-      if (typeof supported === "boolean") {
-        await chrome.storage.session.set({ gpuSupport: supported }).catch(() => {});
-      }
-      return supported === true;
-    })().finally(() => { gpuCheck = undefined; });
-    gpuCheck.then(respond, () => respond(false));
+    gpuAvailable().then(respond, () => respond(false));
+    return true;
+  }
+  if (message.type === "get-translation-models" && sender.tab) {
+    (async () => {
+      const { selectedModel, inferenceMode } = await chrome.storage.local.get(["selectedModel", "inferenceMode"]);
+      const mode = await effectiveInferenceMode(inferenceMode, () => gpuAvailable().catch(() => false));
+      const available = new Map(await Promise.all(models.map(async ({ id }) => [id, await modelSource(id)])));
+      const active = await activeModel(selectedModel, available, mode);
+      return {
+        activeModelId: active?.id,
+        models: models.filter(model => available.get(model.id) && !modelCompatibility(model, mode))
+          .map(({ id, label, gpuRequired }) =>
+          ({ id, label: `PLaMo 3 Translate ${label}${gpuRequired ? "（WebGPU必須）" : ""}` })),
+      };
+    })().then(respond, () => respond());
     return true;
   }
   if (message.type === "warm-translation" && sender.tab) {
@@ -150,12 +170,31 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     })().then(respond, () => respond());
     return true;
   }
+  if (message.type === "stop-post-translation" && sender.tab?.id !== undefined && sender.documentId) {
+    const { id } = message;
+    const key = JSON.stringify([sender.tab.id, sender.documentId, id]);
+    const starting = startingTranslations.get(key);
+    if (starting) starting.stopped = true;
+    if (starting && !starting.forwarded) {
+      respond();
+      return;
+    }
+    chrome.runtime.sendMessage({
+      type: "stop-inference", id, tabId: sender.tab.id, documentId: sender.documentId,
+    }).then(() => respond(), () => respond());
+    return true;
+  }
   if (message.type === "translate-post" && sender.tab?.id !== undefined && sender.documentId) {
+    const key = JSON.stringify([sender.tab.id, sender.documentId, message.id]);
+    const starting = { stopped: false, forwarded: false };
+    startingTranslations.set(key, starting);
     (async () => {
       const { enabled, inferenceMode: mode, selectedModel } =
         await chrome.storage.local.get(["enabled", "inferenceMode", "selectedModel"]);
       if (enabled === false) return { error: "投稿の翻訳は無効です。" };
       await ensureOffscreen();
+      if (starting.stopped) return { stopped: true };
+      starting.forwarded = true;
       return chrome.runtime.sendMessage({
         type: "infer",
         id: message.id,
@@ -167,10 +206,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         glossary: message.glossary,
         mode,
         selectedModel,
+        modelId: message.modelId,
         tabId: sender.tab.id,
         documentId: sender.documentId,
       });
-    })().then(respond, () => respond({ error: "翻訳エンジンを起動できませんでした。" }));
+    })().finally(() => startingTranslations.delete(key))
+      .then(respond, () => respond({ error: "翻訳エンジンを起動できませんでした。" }));
     return true;
   }
   if (message.type === "inference-result" && sender.url === chrome.runtime.getURL(offscreenPage)) {

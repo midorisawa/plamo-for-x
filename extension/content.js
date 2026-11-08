@@ -11,6 +11,7 @@ const states = new WeakMap();
 const originalLanguages = new WeakMap();
 const nativeSelections = new WeakMap();
 const postDisplayChoices = new Map();
+const postModelChoices = new Map();
 const nativeDisplayAttempts = new WeakMap();
 const nativeRestorations = new WeakMap();
 const renamedGrokButtons = new WeakMap();
@@ -23,31 +24,63 @@ let targetLanguage = "";
 let sourceLanguages = null;
 let translationEnabled = false;
 let autoTranslate = false;
-let activeTranslations = 0;
+let activeTranslation;
 let draining = false;
 let expandedPreview;
 let glossaryRevision = 0;
+let translationModels = [];
+let defaultTranslationModel;
+let modelCatalogRequest = 0;
 
-function requestTranslation(text, target, glossary, onPartial, postId, preview, cacheRevision) {
+async function refreshTranslationModels() {
+  const request = ++modelCatalogRequest;
+  try {
+    const { models, activeModelId } = await chrome.runtime.sendMessage({ type: "get-translation-models" });
+    if (request !== modelCatalogRequest) return;
+    translationModels = models;
+    defaultTranslationModel = activeModelId;
+    for (const [postId, modelId] of postModelChoices) {
+      if (!models.some(({ id }) => id === modelId)) postModelChoices.delete(postId);
+    }
+    for (const root of document.querySelectorAll(targetSelector)) {
+      const state = states.get(root);
+      if (!state?.refreshModelPicker) continue;
+      state.modelId = postModelChoices.get(state.post.id);
+      state.refreshModelPicker();
+    }
+  } catch {
+    // 拡張機能を再読み込みしたタブではモデル一覧を取得できない
+  }
+}
+
+function requestTranslation(signal, text, target, glossary, onPartial, modelId, postId, preview, cacheRevision) {
+  if (signal.aborted) return Promise.resolve({ stopped: true });
   if (!translationEnabled) return Promise.resolve({ error: "投稿の翻訳は無効です。" });
   const id = crypto.randomUUID();
   return new Promise(resolve => {
     function finish(result) {
+      if (signal.aborted && !result.stopped) return;
       if (result.partial !== undefined) {
         onPartial(result.partial);
         return;
       }
       clearTimeout(timer);
+      signal.removeEventListener("abort", stop);
       pending.delete(id);
       resolve(result);
+    }
+    function stop() {
+      chrome.runtime.sendMessage({ type: "stop-post-translation", id })
+        .catch(() => {}).then(() => finish({ stopped: true }));
     }
     // Worker側の事前読み込み・再読み込み・翻訳がそれぞれ終わるまで待つ
     const timer = setTimeout(() => finish({ error: "翻訳に時間がかかっています。もう一度お試しください。" }), 10 * 60 * 1000);
     pending.set(id, finish);
+    signal.addEventListener("abort", stop, { once: true });
     async function send() {
       try {
         const response = await chrome.runtime.sendMessage({
-          type: "translate-post", id, text, target, glossary, postId, preview, cacheRevision,
+          type: "translate-post", id, text, target, glossary, postId, preview, cacheRevision, modelId,
         });
         if (pending.has(id) && !response?.accepted) {
           finish(response ?? { error: "翻訳を開始できませんでした。" });
@@ -64,7 +97,7 @@ async function drainAutoQueue() {
   if (draining || !translationEnabled || !autoTranslate || document.visibilityState !== "visible") return;
   draining = true;
   try {
-    while (translationEnabled && autoTranslate && document.visibilityState === "visible" && !activeTranslations && autoQueue.size) {
+    while (translationEnabled && autoTranslate && document.visibilityState === "visible" && !activeTranslation && autoQueue.size) {
       const state = nextAutoTranslation();
       if (state.panel.isConnected && !state.attempted && await state.translate(true)) {
         // 別のタブの翻訳が終わるまで、同じ投稿を先頭に残す
@@ -225,11 +258,89 @@ function renameGrokButton(button) {
 function setPostDisplayChoice(id, choice, root) {
   if (!id || postDisplayChoices.get(id)?.mode === choice) return;
   postDisplayChoices.set(id, { mode: choice });
+  refreshPostCopies(id, root);
+}
+
+function refreshPostCopies(id, root) {
   queueMicrotask(() => {
     for (const other of document.querySelectorAll(`${postSelector}, ${quoteSelector}`)) {
       if (other !== root && (states.get(other)?.post.id ?? readPostId(other)) === id) mount(other);
     }
   });
+}
+
+function addModelPicker(toolbar, currentModel, selectModel, isTranslating) {
+  const busyMessage = "翻訳の完了後にモデルを変更できます。";
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "sns-translator-model-trigger";
+  const svgNamespace = "http://www.w3.org/2000/svg";
+  const icon = document.createElementNS(svgNamespace, "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  const outline = document.createElementNS(svgNamespace, "path");
+  outline.setAttribute("d", "M10.54 1.75h2.92l1.57 2.36c.11.17.32.25.53.21l2.53-.59 2.17 2.17-.58 2.54c-.05.2.04.41.21.53l2.36 1.57v2.92l-2.36 1.57c-.17.12-.26.33-.21.53l.58 2.54-2.17 2.17-2.53-.59c-.21-.04-.42.04-.53.21l-1.57 2.36h-2.92l-1.58-2.36c-.11-.17-.32-.25-.52-.21l-2.54.59-2.17-2.17.58-2.54c.05-.2-.03-.41-.21-.53l-2.35-1.57v-2.92L4.1 8.97c.18-.12.26-.33.21-.53L3.73 5.9 5.9 3.73l2.54.59c.2.04.41-.04.52-.21l1.58-2.36zm1.07 2l-.98 1.47C10.05 6.08 9 6.5 7.99 6.27l-1.46-.34-.6.6.33 1.46c.24 1.01-.18 2.07-1.05 2.64l-1.46.98v.78l1.46.98c.87.57 1.29 1.63 1.05 2.64l-.33 1.46.6.6 1.46-.34c1.01-.23 2.06.19 2.64 1.05l.98 1.47h.78l.97-1.47c.58-.86 1.63-1.28 2.65-1.05l1.45.34.61-.6-.34-1.46c-.23-1.01.18-2.07 1.05-2.64l1.47-.98v-.78l-1.47-.98c-.87-.57-1.28-1.63-1.05-2.64l.34-1.46-.61-.6-1.45.34c-1.02.23-2.07-.19-2.65-1.05l-.97-1.47h-.78zM12 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5c.82 0 1.5-.67 1.5-1.5s-.68-1.5-1.5-1.5zM8.5 12c0-1.93 1.56-3.5 3.5-3.5 1.93 0 3.5 1.57 3.5 3.5s-1.57 3.5-3.5 3.5c-1.94 0-3.5-1.57-3.5-3.5z");
+  icon.append(outline);
+  trigger.append(icon);
+  trigger.title = "この投稿の翻訳モデルを選ぶ";
+  trigger.setAttribute("aria-label", trigger.title);
+  trigger.setAttribute("aria-expanded", "false");
+  const picker = document.createElement("div");
+  picker.className = "sns-translator-model-picker";
+  picker.popover = "auto";
+  trigger.popoverTargetElement = picker;
+  const heading = document.createElement("strong");
+  heading.className = "sns-translator-model-heading";
+  heading.textContent = "別のモデルで再翻訳";
+  const choices = document.createElement("div");
+  picker.append(heading, choices);
+  picker.addEventListener("click", event => event.stopPropagation());
+  picker.addEventListener("toggle", () => {
+    const open = picker.matches(":popover-open");
+    trigger.setAttribute("aria-expanded", String(open));
+    if (open) choices.querySelector("button")?.focus({ preventScroll: true });
+  });
+  trigger.addEventListener("click", event => {
+    event.stopPropagation();
+    if (picker.matches(":popover-open")) return;
+    const rect = trigger.getBoundingClientRect();
+    picker.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 248))}px`;
+    picker.style.top = `${Math.max(8, Math.min(rect.bottom + 4, innerHeight - 186))}px`;
+    renderChoices();
+  });
+  function renderChoices() {
+    if (isTranslating()) {
+      choices.textContent = busyMessage;
+      return;
+    }
+    choices.replaceChildren(...translationModels.filter(({ id }) => id !== currentModel())
+      .map(({ id, label }) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.textContent = label;
+        option.addEventListener("click", () => {
+          if (isTranslating()) {
+            choices.textContent = busyMessage;
+            trigger.focus({ preventScroll: true });
+            return;
+          }
+          picker.hidePopover();
+          trigger.focus({ preventScroll: true });
+          selectModel(id);
+        });
+        return option;
+      }));
+  }
+  toolbar.append(trigger, picker);
+  function refresh() {
+    trigger.hidden = translationModels.length <= 1;
+    if (picker.matches(":popover-open")) {
+      if (trigger.hidden) picker.hidePopover();
+      else renderChoices();
+    }
+  }
+  refresh();
+  return refresh;
 }
 
 function mount(root) {
@@ -245,6 +356,7 @@ function mount(root) {
   const isNote = root.matches(noteSelector);
   const isProfile = root.matches(profileSelector);
   const displayId = !isNote && !isProfile ? post?.id : undefined;
+  const modelId = postModelChoices.get(displayId);
   const selection = postDisplayChoices.get(displayId);
   const displayChoice = () => postDisplayChoices.get(displayId)?.mode;
   const prefersNativeDisplay = () => displayChoice() === "original" || displayChoice() === "grok";
@@ -258,9 +370,10 @@ function mount(root) {
     ? (known?.id === post.id && known?.text === post.text ? known.language : null)
     : translationLanguage(post?.language);
   if (!restoreNative && post && canTranslate(source, target) && previous?.target === target &&
-      previous.displayChoice === displayChoice() &&
+      previous.displayChoice === displayChoice() && previous.modelId === modelId &&
       previous.collapsed === collapsed && matches(previous.post, post) && previous.panel.isConnected) return;
   previous?.panel.remove();
+  previous?.stopTranslation();
   autoQueue.delete(previous);
   manualQueue.delete(previous);
   states.delete(root);
@@ -293,13 +406,23 @@ function mount(root) {
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "PLaMoで翻訳";
+  const stopButton = document.createElement("button");
+  stopButton.type = "button";
+  stopButton.textContent = "停止";
+  stopButton.setAttribute("aria-label", "翻訳を停止");
+  stopButton.hidden = true;
+  let translationController;
+  stopButton.addEventListener("click", event => {
+    event.stopPropagation();
+    translationController?.abort();
+  });
   const output = document.createElement("div");
   output.setAttribute("role", "status");
   output.lang = target;
   output.dir = "auto";
   const references = document.createElement("div");
   references.className = "sns-translator-references";
-  toolbar.append(icon, label, button);
+  toolbar.append(icon, label, button, stopButton);
   panel.append(toolbar, output, references);
   panel.addEventListener("click", event => {
     if (event.target.closest("a")) event.stopPropagation();
@@ -307,17 +430,29 @@ function mount(root) {
   post.body.before(panel);
   post.grokRow?.classList.add("sns-translator-native-row");
   const state = { root, post, panel, target, collapsed, label, output, references,
-    displayChoice: displayChoice(), prefersNativeDisplay, translate: runTranslation };
+    modelId, displayChoice: displayChoice(), prefersNativeDisplay, translate: runTranslation,
+    stopTranslation: () => translationController?.abort() };
   states.set(root, state);
+  if (displayId) {
+    state.refreshModelPicker = addModelPicker(toolbar,
+      () => state.translatedModelId ?? state.modelId ?? defaultTranslationModel, next => {
+        postModelChoices.set(displayId, next);
+        if (displayChoice() === "plamo") refreshPostCopies(displayId, root);
+        else setPostDisplayChoice(displayId, "plamo", root);
+        mount(root);
+        states.get(root)?.panel.querySelector(".sns-translator-model-trigger")?.focus({ preventScroll: true });
+      }, () => button.disabled);
+  }
   warmTranslation();
   button.addEventListener("pointerenter", warmTranslation);
   let translation = null;
   let links = [];
   const expansion = !prefersNativeDisplay() && !collapsed && !isNote && !isProfile &&
-    expandedPreview?.id === post.id && expandedPreview?.target === target
+    expandedPreview?.id === post.id && expandedPreview?.target === target && expandedPreview?.modelId === modelId
     ? expandedPreview : undefined;
   let keepingPreview = Boolean(expansion);
   if (expansion) {
+    state.translatedModelId = expansion.translatedModelId;
     output.append(...expansion.output.cloneNode(true).childNodes);
     output.style.cssText = expansion.output.style.cssText;
     references.append(...expansion.references.cloneNode(true).childNodes);
@@ -364,22 +499,45 @@ function mount(root) {
       showTranslation(show);
       return;
     }
-    if (!automatic && activeTranslations) {
+    if (!automatic && activeTranslation) {
       manualQueue.add(state);
       return;
     }
-    activeTranslations++;
+    activeTranslation = state;
+    translationController = new AbortController();
+    const { signal } = translationController;
+    stopButton.hidden = false;
     try {
-      return await translate(automatic);
+      return await translate(automatic, signal);
     } finally {
-      activeTranslations--;
-      if (!activeTranslations) drainManualQueue();
+      translationController = undefined;
+      const restoreFocus = document.activeElement === stopButton;
+      stopButton.hidden = true;
+      button.disabled = false;
+      if (signal.aborted && panel.isConnected) {
+        keepingPreview = false;
+        output.removeAttribute("aria-busy");
+        references.replaceChildren();
+        panel.querySelector(".sns-translator-grok")?.remove();
+        panel.removeAttribute("data-keep-grok");
+        showTranslation(false);
+        button.textContent = "PLaMoで翻訳";
+        if (displayId) {
+          state.displayChoice = "original";
+          setPostDisplayChoice(displayId, "original", root);
+        }
+        if (restoreFocus) button.focus({ preventScroll: true });
+      }
+      state.refreshModelPicker?.();
+      activeTranslation = undefined;
+      drainManualQueue();
     }
   }
 
-  async function translate(automatic) {
+  async function translate(automatic, signal) {
     if (!matches(post, readTarget(root))) return;
     if (translation !== null) return;
+    const { modelId } = state;
     state.attempted = true;
     state.glossaryRevision = glossaryRevision;
     button.disabled = true;
@@ -475,6 +633,7 @@ function mount(root) {
       label.textContent = source ? `PLaMoによる${source}からの翻訳` : "PLaMoによる翻訳";
     }
     function finish(result) {
+      if (signal.aborted || result.stopped) return;
       const partial = result.partial !== undefined;
       if (!panel.isConnected || !post.body.isConnected || states.get(root) !== state) return;
       // 途中の訳文はDOM監視によるパネルの更新に任せ、確定時に本文を照合する
@@ -518,6 +677,7 @@ function mount(root) {
       }
       if (!panel.hasAttribute("data-show-translation")) formatTranslation();
       translation = result.text + (result.truncated ? "\n（訳文は途中まで）" : "");
+      state.translatedModelId = result.modelId;
       showTranslation(true);
     }
     try {
@@ -530,7 +690,7 @@ function mount(root) {
       }
 
       const { terms: glossary, error } = await chrome.runtime.sendMessage({ type: "get-glossary-terms" });
-      if (!panel.isConnected) return;
+      if (signal.aborted || !panel.isConnected) return;
       if (error) {
         finish({ error });
         return;
@@ -538,6 +698,7 @@ function mount(root) {
       let text = input.text;
       let prefix = "";
       let cacheRevision;
+      let prefixModelId;
       if (collapsed) {
         const segmenter = new Intl.Segmenter(translationLanguage(post.language) || undefined, { granularity: "sentence" });
         const sentences = [...segmenter.segment(text)];
@@ -547,7 +708,7 @@ function mount(root) {
           const source = text.slice(0, boundary);
           const separator = /\n\s*$/.test(source) ? "\n" : /^(ja|zh-)/.test(target) ? "" : " ";
           const first = await requestTranslation(
-            source.trimEnd(), target, glossary, partial => finish({ partial }), post.id, { source, separator },
+            signal, source.trimEnd(), target, glossary, partial => finish({ partial }), modelId, post.id, { source, separator },
           );
           if (!first.text || first.truncated) {
             finish(automatic && first.busy ? { retry: true } : first);
@@ -555,15 +716,17 @@ function mount(root) {
           }
           prefix = first.text + separator;
           cacheRevision = first.cacheRevision;
+          prefixModelId = first.modelId;
           text = text.slice(boundary).trim();
           if (!panel.isConnected || !matches(post, readTarget(root))) return;
         }
       }
       if (prefix) finish({ partial: prefix });
       const result = text
-        ? await requestTranslation(text, target, glossary, partial => finish({ partial: prefix + partial }),
+        ? await requestTranslation(signal, text, target, glossary, partial => finish({ partial: prefix + partial }),
+          prefixModelId ?? modelId,
           !collapsed && !isNote && !isProfile ? post.id : undefined, undefined, cacheRevision)
-        : { text: prefix.trimEnd() };
+        : { text: prefix.trimEnd(), modelId: prefixModelId };
       if (automatic && result.busy) {
         finish({ retry: true });
         return true;
@@ -587,6 +750,8 @@ document.addEventListener("click", event => {
       state.panel.hasAttribute("data-show-translation") ? {
       id: state.post.id,
       target: state.target,
+      modelId: state.modelId,
+      translatedModelId: state.translatedModelId,
       output: state.output.cloneNode(true),
       references: state.references.cloneNode(true),
       label: state.label.textContent,
@@ -668,6 +833,7 @@ function setTranslationEnabled(enabled) {
     }
   }
   document.querySelectorAll(".sns-translator").forEach(panel => panel.remove());
+  activeTranslation?.stopTranslation();
   document.querySelectorAll(".sns-translator-native-row").forEach(row => row.classList.remove("sns-translator-native-row"));
   for (const finish of pending.values()) finish({ error: "投稿の翻訳は無効です。" });
 }
@@ -687,12 +853,15 @@ Promise.all([
     updateTargetLanguage();
     setTranslationEnabled(true);
   });
+refreshTranslationModels();
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "session" && changes.gpuSupport) {
     gpuSupport = changes.gpuSupport.newValue;
     if (typeof autoTranslatePreference !== "boolean") applyAutoTranslatePreference(autoTranslatePreference);
+    refreshTranslationModels();
   }
   if (area !== "local") return;
+  if (changes.selectedModel || changes.modelCatalogVersion || changes.inferenceMode) refreshTranslationModels();
   if (changes.enabled?.newValue === false) setTranslationEnabled(false);
   if (changes.glossaries || changes.selectedGlossaryIds) {
     glossaryRevision++;
@@ -727,6 +896,7 @@ document.addEventListener("sns-translator-quote-ready", event => {
   readyQuoteParents.add(id);
 });
 const postObserver = new MutationObserver(records => {
+  if (activeTranslation && !activeTranslation.root.isConnected) activeTranslation.stopTranslation();
   const targets = new Set();
   for (const { target, addedNodes } of records) {
     const element = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
