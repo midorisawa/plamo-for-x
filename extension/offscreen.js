@@ -81,7 +81,7 @@ async function infer(message, respond) {
     }).catch(() => {});
   }
 
-  if (!Array.isArray(glossary) || glossary.length > glossaryLimit ||
+  if (!Array.isArray(glossary) || glossary.length > glossaryLimit * 2 ||
       glossary.some(term => !validGlossaryTerm(term?.source) || !validGlossaryTerm(term?.target))) {
     respond({ error: "用語集の原語と訳語を確認してください。" });
     return;

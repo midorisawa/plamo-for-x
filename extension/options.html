@@ -86,7 +86,7 @@
         <h2 id="glossary-title" class="tab-only">用語集</h2>
         <details id="glossary-picker">
           <summary>適用する用語集</summary>
-          <p class="muted">選んだ用語集から合計20組まで適用できます。</p>
+          <p class="muted">有効な用語を合計20組まで適用できます。双方向の用語は逆向きにも適用します。</p>
           <fieldset id="glossary-selection" aria-label="適用する用語集" disabled>
             <div id="glossary-selection-choices"></div>
           </fieldset>
@@ -101,6 +101,11 @@
       <p class="section-description">新しく作るか、登録済みの用語集を選んで原語と訳語を編集します。</p>
       <form id="glossary-form">
         <fieldset disabled>
+          <div class="actions glossary-file-actions">
+            <button id="glossary-import" type="button">JSONをインポート</button>
+            <button id="glossary-export" type="button" disabled>JSONをエクスポート</button>
+            <input id="glossary-file" type="file" accept=".json,application/json" hidden>
+          </div>
           <div class="field-grid">
             <label class="field">編集する用語集<select id="glossary-list"></select></label>
             <label class="field">用語集の名前<input id="glossary-name" type="text" maxlength="80" required></label>
@@ -159,9 +164,13 @@
 </template>
 <template id="glossary-entry">
   <div class="glossary-entry">
-    <label class="field">原語<input type="text" maxlength="100"></label>
-    <label class="field">訳語<input type="text" maxlength="100"></label>
-    <button type="button" aria-label="この用語を削除">削除</button>
+    <label class="field">原語<input type="text" maxlength="200"></label>
+    <label class="field">訳語<input type="text" maxlength="200"></label>
+    <div class="actions glossary-entry-actions">
+      <label class="check"><input class="term-enabled" type="checkbox">有効</label>
+      <label class="check"><input class="term-bidirectional" type="checkbox">双方向</label>
+      <button type="button" aria-label="この用語を削除">削除</button>
+    </div>
   </div>
 </template>
 <dialog id="clear-cache-dialog" aria-labelledby="clear-cache-title" aria-describedby="clear-cache-description">

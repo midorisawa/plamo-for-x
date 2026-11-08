@@ -195,6 +195,8 @@ details > :not(summary) { margin: .6rem .8rem; }
 #glossary-entries { display: grid; gap: .65rem; margin-block: .9rem; }
 .glossary-entry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; align-items: end; gap: .5rem; }
 .actions { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+.glossary-file-actions { margin-bottom: .9rem; }
+.glossary-entry-actions { align-items: center; }
 .separate-action { margin-inline-start: auto; }
 .cache-usage { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem .75rem; margin-bottom: .9rem; }
 meter { width: 100%; }
@@ -242,6 +244,6 @@ dialog .actions { justify-content: end; margin-top: 1rem; }
 @media (max-width: 480px) {
   .field-grid { grid-template-columns: minmax(0, 1fr); }
   .glossary-entry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .glossary-entry button { grid-column: 2; justify-self: end; }
+  .glossary-entry-actions { grid-column: 1 / -1; justify-content: end; }
   .separate-action { margin-inline-start: 0; }
 }
