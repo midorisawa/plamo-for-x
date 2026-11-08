@@ -113,6 +113,28 @@ button, select, input:is([type="number"], [type="file"], [type="text"]), .button
   background: var(--surface);
 }
 
+.select-control { display: grid; min-width: 0; }
+@media (forced-colors: none) {
+  .select-control select {
+    grid-area: 1 / 1;
+    appearance: none;
+    padding-inline-end: 2.25rem;
+  }
+  .select-control::after {
+    grid-area: 1 / 1;
+    place-self: center end;
+    width: .45rem;
+    height: .45rem;
+    margin-inline-end: 1rem;
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    transform: translateY(-.12rem) rotate(45deg);
+    pointer-events: none;
+    content: "";
+  }
+  .select-control:has(select:disabled)::after { opacity: .6; }
+}
+
 button, summary, .button-link { cursor: pointer; }
 button:not(:disabled):hover, summary:hover, .button-link:hover { background: var(--subtle); }
 button:disabled, select:disabled, input:disabled { opacity: .6; cursor: default; }
@@ -211,7 +233,7 @@ details > :not(summary) { margin: .6rem .8rem; }
 .glossary-choice small { margin-top: .12rem; }
 .glossary-choice button[aria-current] { border-color: var(--accent); background: var(--accent-soft); }
 .glossary-file-actions { margin-top: 1rem; padding-top: .7rem; border-top: 1px solid var(--border); }
-.glossary-file-actions .actions { margin-top: .5rem; font-size: .875rem; }
+.glossary-file-actions .actions { font-size: .875rem; }
 .glossary-editor {
   padding: 1rem;
   border: 1px solid var(--border);
@@ -240,6 +262,7 @@ details > :not(summary) { margin: .6rem .8rem; }
 .glossary-entry-actions { margin-top: .55rem; font-size: .875rem; }
 .glossary-entry-actions button { margin-inline-start: auto; color: var(--danger); }
 .glossary-editor-footer { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--border); }
+.glossary-save-actions { margin-inline-start: auto; justify-content: end; }
 .glossary-editor-footer .glossary-save {
   min-width: 5rem;
   border-color: var(--primary);
@@ -247,7 +270,9 @@ details > :not(summary) { margin: .6rem .8rem; }
   color: var(--on-primary);
   font-weight: 650;
 }
-.glossary-editor-footer .glossary-save:not(:disabled):hover { opacity: .85; }
+.glossary-editor-footer .glossary-save:not(:disabled):hover {
+  background: color-mix(in srgb, var(--primary) 88%, var(--surface));
+}
 .glossary-feedback:not(:empty) {
   margin-top: .65rem;
   padding: .5rem .65rem;
@@ -282,7 +307,6 @@ details > :not(summary) { margin: .6rem .8rem; }
 .cache-usage { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem .75rem; margin-bottom: .9rem; }
 meter { width: 100%; }
 #cache-limit { width: 7rem; }
-#cache-status { min-block-size: 2lh; margin-top: .4rem; }
 
 #settings-status { margin: 0; overflow-wrap: anywhere; }
 
