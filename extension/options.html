@@ -82,43 +82,64 @@
         </section>
       </section>
 
-      <section id="glossaries" class="panel" aria-label="用語集">
-        <h2 id="glossary-title" class="tab-only">用語集</h2>
-        <details id="glossary-picker">
-          <summary>適用する用語集</summary>
-          <p class="muted">有効な用語を合計20組まで適用できます。双方向の用語は逆向きにも適用します。</p>
-          <fieldset id="glossary-selection" aria-label="適用する用語集" disabled>
-            <div id="glossary-selection-choices"></div>
-          </fieldset>
-          <p id="glossary-selection-status" role="status"></p>
-          <a class="popup-only" href="options.html#glossary-editor" target="_blank" rel="noopener">用語集を編集<span aria-hidden="true"> ↗</span></a>
-        </details>
-      </section>
     </fieldset>
 
-    <section id="glossary-editor" class="panel tab-only" aria-labelledby="glossary-editor-title">
-      <h2 id="glossary-editor-title">用語集を編集</h2>
-      <p class="section-description">新しく作るか、登録済みの用語集を選んで原語と訳語を編集します。</p>
-      <form id="glossary-form">
-        <fieldset disabled>
-          <div class="actions glossary-file-actions">
-            <button id="glossary-import" type="button">JSONをインポート</button>
-            <button id="glossary-export" type="button" disabled>JSONをエクスポート</button>
+    <section id="glossaries" class="panel" aria-label="用語集">
+      <header class="tab-only">
+        <h2>用語集</h2>
+        <p class="section-description">固有名詞や専門用語に使う訳語を指定できます。</p>
+      </header>
+      <div class="glossary-workspace">
+        <div class="glossary-library">
+          <div class="glossary-library-heading tab-only">
+            <h3>保存済みの用語集</h3>
+            <button id="glossary-new" type="button" disabled>＋新規作成</button>
+          </div>
+          <details id="glossary-picker" open>
+            <summary class="popup-only">翻訳に使う用語集 <span id="glossary-popup-count" class="glossary-badge"></span></summary>
+            <div class="glossary-picker-body">
+              <p class="muted tab-only">チェックした用語集を次の翻訳から使います。</p>
+              <p id="glossary-selection-count" class="muted"></p>
+              <fieldset id="glossary-selection" aria-label="翻訳に使う用語集" disabled>
+                <div id="glossary-selection-choices">読み込み中…</div>
+              </fieldset>
+              <p id="glossary-selection-status" class="glossary-feedback" role="status"></p>
+              <a class="popup-only" href="options.html#glossaries" target="_blank" rel="noopener">用語集を管理<span aria-hidden="true"> ↗</span></a>
+            </div>
+          </details>
+          <div class="glossary-file-actions tab-only">
+            <p class="muted">ローカル翻訳Web UIと共通のJSON形式</p>
+            <div class="actions">
+              <button id="glossary-import" type="button" disabled>読み込む</button>
+              <button id="glossary-export" type="button" disabled>すべて書き出す</button>
+            </div>
             <input id="glossary-file" type="file" accept=".json,application/json" hidden>
+            <p id="glossary-file-status" class="glossary-feedback" role="status"></p>
           </div>
-          <div class="field-grid">
-            <label class="field">編集する用語集<select id="glossary-list"></select></label>
-            <label class="field">用語集の名前<input id="glossary-name" type="text" maxlength="80" required></label>
-          </div>
-          <div id="glossary-entries"></div>
-          <div class="actions">
-            <button id="glossary-add-entry" type="button">用語を追加</button>
-            <button type="submit">用語集を保存</button>
-            <button id="glossary-delete" class="danger separate-action" type="button">用語集を削除</button>
-          </div>
-        </fieldset>
-        <p id="glossary-status" role="status"></p>
-      </form>
+        </div>
+        <section id="glossary-editor" class="glossary-editor tab-only" aria-labelledby="glossary-editor-title">
+          <h3 id="glossary-editor-title" tabindex="-1">用語集を編集</h3>
+          <p id="glossary-editor-empty" class="muted">「新規作成」で用語集を作成できます。保存済みの用語集を変更するには、その用語集の「編集」を選びます。</p>
+          <form id="glossary-form" hidden>
+            <fieldset>
+              <label class="field">用語集の名前<input id="glossary-name" type="text" maxlength="80" required placeholder="例：製品名と機能名"></label>
+              <div class="glossary-term-heading">
+                <h4>用語</h4>
+                <span id="glossary-entry-count" class="muted"></span>
+              </div>
+              <p class="muted">無効にした用語は翻訳時に使いません。双方向を選ぶと、原語と訳語を入れ替えた組も使います。</p>
+              <div id="glossary-entries"></div>
+              <button id="glossary-add-entry" type="button">＋用語を追加</button>
+              <div class="actions glossary-editor-footer">
+                <button class="glossary-save" type="submit">保存</button>
+                <button id="glossary-cancel" type="button">閉じる</button>
+                <button id="glossary-delete" class="danger separate-action" type="button">用語集を削除</button>
+              </div>
+            </fieldset>
+          </form>
+          <p id="glossary-status" class="glossary-feedback" role="status"></p>
+        </section>
+      </div>
     </section>
 
     <section id="cache" class="panel tab-only" aria-labelledby="cache-title">
@@ -163,15 +184,19 @@
   </div>
 </template>
 <template id="glossary-entry">
-  <div class="glossary-entry">
-    <label class="field">原語<input type="text" maxlength="200"></label>
-    <label class="field">訳語<input type="text" maxlength="200"></label>
+  <fieldset class="glossary-entry">
+    <legend></legend>
+    <div class="glossary-term-pair">
+      <label class="field">原語<input type="text" maxlength="200"></label>
+      <span class="glossary-direction" aria-hidden="true">→</span>
+      <label class="field">訳語<input type="text" maxlength="200"></label>
+    </div>
     <div class="actions glossary-entry-actions">
       <label class="check"><input class="term-enabled" type="checkbox">有効</label>
       <label class="check"><input class="term-bidirectional" type="checkbox">双方向</label>
       <button type="button" aria-label="この用語を削除">削除</button>
     </div>
-  </div>
+  </fieldset>
 </template>
 <dialog id="clear-cache-dialog" aria-labelledby="clear-cache-title" aria-describedby="clear-cache-description">
   <h2 id="clear-cache-title">翻訳キャッシュを削除</h2>

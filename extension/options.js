@@ -4,10 +4,7 @@ import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translat
 
 const popup = chrome.extension.getViews({ type: "popup" }).includes(window);
 document.documentElement.classList.toggle("popup", popup);
-if (!popup) {
-  setupModelSettings();
-  document.querySelector("#glossary-picker").open = true;
-}
+if (!popup) setupModelSettings();
 setupGlossarySettings(popup);
 const enabledSwitch = document.querySelector("#enabled");
 const enabledLabel = document.querySelector("#enabled-label");

@@ -15,10 +15,12 @@ function sameEntries(before, after) {
   });
 }
 
-function setupGlossarySelection() {
+function setupGlossarySelection(onLoad, onEdit) {
   const fields = document.querySelector("#glossary-selection");
   const choices = document.querySelector("#glossary-selection-choices");
   const status = document.querySelector("#glossary-selection-status");
+  const count = document.querySelector("#glossary-selection-count");
+  const popupCount = document.querySelector("#glossary-popup-count");
   let pending = 0;
   let selectionRefresh = 0;
 
@@ -32,20 +34,50 @@ function setupGlossarySelection() {
       const focusedId = choices.contains(active) ? active.value : undefined;
       choices.replaceChildren();
       let focusTarget;
+      let selectedCount = 0;
+      const sources = new Set();
       for (const { id, name, entries } of glossaries) {
+        const row = document.createElement("div");
+        row.className = "glossary-choice";
         const label = document.createElement("label");
         label.className = "check";
         const input = document.createElement("input");
         input.type = "checkbox";
         input.value = id;
         input.checked = selectedGlossaryIds.includes(id);
-        if (id === focusedId) focusTarget = input;
-        label.append(input, `${name}（${entries.length}組）`);
-        choices.append(label);
+        const enabled = entries.filter(term => term.enabled !== false);
+        if (input.checked) {
+          selectedCount++;
+          for (const { source } of enabled) sources.add(source);
+        }
+        if (id === focusedId && active.tagName === "INPUT") focusTarget = input;
+        const description = document.createElement("span");
+        const title = document.createElement("strong");
+        title.textContent = name;
+        const meta = document.createElement("small");
+        meta.textContent = `有効 ${enabled.length} / ${entries.length}組`;
+        description.append(title, meta);
+        label.append(input, description);
+        row.append(label);
+        if (onEdit) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.value = id;
+          button.textContent = "編集";
+          button.setAttribute("aria-label", `${name}を編集`);
+          button.addEventListener("click", () => onEdit(id));
+          if (id === focusedId && active.tagName === "BUTTON") focusTarget = button;
+          row.append(button);
+        }
+        choices.append(row);
       }
-      if (!glossaries.length) choices.textContent = "登録済みの用語集はありません。";
-      fields.disabled = !glossaries.length;
-      focusTarget?.focus();
+      if (!glossaries.length) choices.textContent = "保存済みの用語集はありません。";
+      fields.disabled = false;
+      const applied = `適用する用語 ${sources.size} / ${glossaryLimit}組`;
+      count.textContent = onEdit ? `選択中 ${selectedCount}件 · ${applied}` : applied;
+      popupCount.textContent = selectedCount ? `${selectedCount}件選択中` : "未選択";
+      onLoad?.(glossaries);
+      focusTarget?.focus({ preventScroll: true });
     } catch {
       if (refreshId !== selectionRefresh || pending) return;
       fields.disabled = true;
@@ -73,15 +105,23 @@ function setupGlossarySelection() {
 }
 
 export function setupGlossarySettings(popup) {
-  setupGlossarySelection();
-  if (popup) return;
+  if (popup) {
+    setupGlossarySelection();
+    return;
+  }
 
   const form = document.querySelector("#glossary-form");
-  const select = document.querySelector("#glossary-list");
+  const heading = document.querySelector("#glossary-editor-title");
+  const empty = document.querySelector("#glossary-editor-empty");
+  const create = document.querySelector("#glossary-new");
+  const importButton = document.querySelector("#glossary-import");
+  const fileStatus = document.querySelector("#glossary-file-status");
   const name = document.querySelector("#glossary-name");
   const rows = document.querySelector("#glossary-entries");
+  const entryCount = document.querySelector("#glossary-entry-count");
   const template = document.querySelector("#glossary-entry");
   const add = document.querySelector("#glossary-add-entry");
+  const save = form.querySelector('button[type="submit"]');
   const remove = document.querySelector("#glossary-delete");
   const fileInput = document.querySelector("#glossary-file");
   const exportButton = document.querySelector("#glossary-export");
@@ -89,6 +129,27 @@ export function setupGlossarySettings(popup) {
   const status = document.querySelector("#glossary-status");
   let glossaries = [];
   let editing;
+  let invalidInput;
+
+  function clearValidation() {
+    invalidInput?.setCustomValidity("");
+    invalidInput = undefined;
+  }
+
+  function showValidation(input, message) {
+    invalidInput = input;
+    input.setCustomValidity(message);
+    input.reportValidity();
+  }
+
+  function updateRows() {
+    const count = rows.childElementCount;
+    entryCount.textContent = `${count} / ${glossaryLimit}行`;
+    add.disabled = count >= glossaryLimit;
+    Array.from(rows.children).forEach((row, index) => {
+      row.querySelector("legend").textContent = `用語 ${index + 1}`;
+    });
+  }
 
   function addEntry(entry = {}) {
     const row = template.content.firstElementChild.cloneNode(true);
@@ -97,38 +158,72 @@ export function setupGlossarySettings(popup) {
     target.value = target.defaultValue = entry.target ?? "";
     enabled.checked = entry.enabled !== false;
     bidirectional.checked = entry.bidirectional === true;
+    const arrow = row.querySelector(".glossary-direction");
+    const showDirection = () => { arrow.textContent = bidirectional.checked ? "↔" : "→"; };
+    showDirection();
+    bidirectional.addEventListener("change", showDirection);
     row.querySelector("button").addEventListener("click", () => {
+      const adjacent = row.nextElementSibling ?? row.previousElementSibling;
       row.remove();
-      add.disabled = false;
-      if (!rows.childElementCount) addEntry();
+      updateRows();
+      (adjacent?.querySelector("input") ?? add).focus();
     });
     rows.append(row);
-    add.disabled = rows.childElementCount >= glossaryLimit;
+    updateRows();
     return source;
   }
 
-  function renderList(id) {
-    select.replaceChildren(new Option("新しい用語集", ""),
-      ...glossaries.map(item => new Option(item.name, item.id)));
-    const deleted = id && !glossaries.some(item => item.id === id);
-    if (deleted) {
-      const option = new Option(`${editing.name}（削除済み）`, id);
-      option.disabled = true;
-      select.add(option);
+  function syncLibrary() {
+    const deleted = editing && !glossaries.some(item => item.id === editing.id);
+    remove.hidden = !editing || deleted;
+    heading.textContent = form.hidden ? "用語集を編集" : deleted ? "削除された用語集" :
+      editing ? editing.name : "新しい用語集";
+    for (const button of document.querySelectorAll(".glossary-choice button")) {
+      if (button.value === editing?.id) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
     }
-    select.value = id;
-    remove.disabled = !id || deleted;
     exportButton.disabled = !glossaries.length;
   }
 
   function openEditor(id) {
-    const glossary = glossaries.find(item => item.id === id);
-    editing = glossary;
-    renderList(glossary?.id ?? "");
-    name.value = name.defaultValue = glossary?.name ?? "";
+    editing = glossaries.find(item => item.id === id);
+    form.hidden = id === undefined;
+    empty.hidden = !form.hidden;
+    name.value = name.defaultValue = editing?.name ?? "";
+    clearValidation();
     rows.replaceChildren();
-    for (const entry of glossary?.entries ?? [{}]) addEntry(entry);
+    if (!form.hidden) {
+      for (const entry of editing?.entries ?? [{}]) addEntry(entry);
+    }
+    syncLibrary();
     status.textContent = "";
+  }
+
+  function draftEntries() {
+    return Array.from(rows.children, row => {
+      const [original, translation, enabled, bidirectional] = row.querySelectorAll("input");
+      return {
+        source: readGlossaryText(original), target: readGlossaryText(translation),
+        ...(!enabled.checked && { enabled: false }),
+        ...(bidirectional.checked && { bidirectional: true }),
+      };
+    });
+  }
+
+  function switchEditor(id) {
+    if (fields.disabled) return;
+    const changed = !form.hidden && (name.value !== name.defaultValue.replace(/[\r\n]/g, "") ||
+      !sameEntries(editing?.entries ?? [], draftEntries().filter(term => term.source || term.target)));
+    if (changed && !window.confirm("保存していない変更を破棄しますか？")) return;
+    const previousId = editing?.id;
+    openEditor(id);
+    if (id === "") name.focus();
+    else if (id !== undefined) heading.focus();
+    else {
+      const button = Array.from(document.querySelectorAll(".glossary-choice button"))
+        .find(button => button.value === previousId);
+      (button ?? create).focus();
+    }
   }
 
   async function update(id, entry) {
@@ -156,9 +251,9 @@ export function setupGlossarySettings(popup) {
           if (entry.name === original.name) entry.name = current.name;
           if (entriesUnchanged) entry.entries = current.entries;
         }
-        const next = glossaries.filter(item => item.id !== id);
-        if (entry) next.push(entry);
+        let next = glossaries.filter(item => item.id !== id);
         if (entry) {
+          next = current ? glossaries.map(item => item.id === id ? entry : item) : glossaries.concat(entry);
           glossaryTerms(next, selectedGlossaryIds);
           await chrome.storage.local.set({ glossaries: next });
         } else {
@@ -168,74 +263,79 @@ export function setupGlossarySettings(popup) {
         }
         return next;
       });
+      fields.disabled = false;
       openEditor(entry?.id);
       status.textContent = entry ? "用語集を保存しました。" : "用語集を削除しました。";
+      (entry ? save : create).focus();
     } catch (error) {
       const latest = await chrome.storage.local.get("glossaries").catch(() => ({}));
       if (latest.glossaries) {
         glossaries = latest.glossaries;
-        renderList(original?.id ?? "");
+        syncLibrary();
       }
       status.textContent = `用語集を更新できませんでした。 ${error.message}`;
+      fields.disabled = false;
+      (entry || remove.hidden ? save : remove).focus();
     } finally {
       fields.disabled = false;
     }
   }
 
-  select.addEventListener("change", () => openEditor(select.value));
+  create.addEventListener("click", () => switchEditor(""));
+  document.querySelector("#glossary-cancel").addEventListener("click", () => switchEditor());
   add.addEventListener("click", () => addEntry().focus());
   remove.addEventListener("click", () => {
-    if (editing && window.confirm("この用語集を削除しますか？")) update(editing.id);
+    if (editing && window.confirm(`「${editing.name}」を削除しますか？`)) update(editing.id);
   });
+  form.addEventListener("input", clearValidation);
   form.addEventListener("submit", event => {
     event.preventDefault();
+    status.textContent = "";
     const title = readGlossaryText(name);
-    try {
-      if (!title.trim()) throw new Error("用語集の名前を入力してください。");
-      const entries = [];
-      for (const [index, row] of Array.from(rows.children).entries()) {
-        const [original, translation, enabled, bidirectional] = row.querySelectorAll("input");
-        const source = readGlossaryText(original);
-        const target = readGlossaryText(translation);
-        if (!source && !target) continue;
-        if (!validGlossaryTerm(source) || !validGlossaryTerm(target)) {
-          throw new Error(`${index + 1}行目の原語と訳語を確認してください。`);
-        }
-        entries.push({
-          source, target, ...(!enabled.checked && { enabled: false }),
-          ...(bidirectional.checked && { bidirectional: true }),
-        });
-      }
-      if (!entries.length) throw new Error("原語と訳語を1組以上入力してください。");
-      const id = editing?.id ?? crypto.randomUUID();
-      const entry = { id, name: title, entries };
-      update(id, entry);
-    } catch (error) {
-      status.textContent = error.message;
+    if (!title.trim()) {
+      showValidation(name, "用語集の名前を入力してください。");
+      return;
     }
+    const entries = [];
+    for (const [index, term] of draftEntries().entries()) {
+      const { source, target } = term;
+      if (!source && !target) continue;
+      const sourceValid = validGlossaryTerm(source);
+      if (!sourceValid || !validGlossaryTerm(target)) {
+        const input = rows.children[index].querySelectorAll("input")[sourceValid ? 1 : 0];
+        const missing = sourceValid ? "訳語を入力してください。" : "原語を入力してください。";
+        showValidation(input, input.value.trim() ? "用語に使えない文字が含まれています。" : missing);
+        return;
+      }
+      entries.push(term);
+    }
+    if (!entries.length) {
+      showValidation(rows.querySelector("input") ?? addEntry(), "原語と訳語を1組以上入力してください。");
+      return;
+    }
+    const id = editing?.id ?? crypto.randomUUID();
+    update(id, { id, name: title, entries });
   });
 
-  document.querySelector("#glossary-import").addEventListener("click", () => fileInput.click());
+  importButton.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
     const [file] = fileInput.files;
     fileInput.value = "";
     if (!file) return;
-    fields.disabled = true;
-    status.textContent = "";
+    importButton.disabled = true;
+    fileStatus.textContent = "";
     try {
       const imported = parseGlossaryFile(await file.text());
-      glossaries = await withGlossaryLock(async () => {
+      await withGlossaryLock(async () => {
         const { glossaries = [] } = await chrome.storage.local.get("glossaries");
         const next = glossaries.concat(imported);
         await chrome.storage.local.set({ glossaries: next });
-        return next;
       });
-      renderList(editing?.id ?? "");
-      status.textContent = `${imported.length}件の用語集を追加しました。`;
+      fileStatus.textContent = `${imported.length}件の用語集を追加しました。`;
     } catch (error) {
-      status.textContent = error instanceof SyntaxError ? "JSONファイルを読み込めませんでした。" : error.message;
+      fileStatus.textContent = error instanceof SyntaxError ? "JSONファイルを読み込めませんでした。" : error.message;
     } finally {
-      fields.disabled = false;
+      importButton.disabled = false;
     }
   });
 
@@ -252,13 +352,14 @@ export function setupGlossarySettings(popup) {
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      status.textContent = `用語集をエクスポートできませんでした。 ${error.message}`;
+      fileStatus.textContent = `用語集を書き出せませんでした。 ${error.message}`;
     }
   });
 
-  chrome.storage.local.get("glossaries").then(settings => {
-    glossaries = settings.glossaries ?? [];
-    openEditor("");
-    fields.disabled = false;
-  }).catch(() => { status.textContent = "用語集を読み込めませんでした。"; });
+  setupGlossarySelection(items => {
+    glossaries = items;
+    create.disabled = false;
+    syncLibrary();
+  }, switchEditor);
+  importButton.disabled = false;
 }
