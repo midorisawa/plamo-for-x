@@ -96,7 +96,7 @@ p { margin: .4rem 0 0; }
   background: var(--surface);
 }
 
-.panel:target { border-color: var(--accent); }
+:root:not(.settings-highlight-dismissed) .panel:target { border-color: var(--accent); }
 .panel > h2 + .field, .panel > h2 + details { margin-top: .9rem; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .field { display: grid; gap: .35rem; min-width: 0; font-weight: 650; }

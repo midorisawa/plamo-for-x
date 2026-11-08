@@ -4,7 +4,20 @@ import { clearTranslationCache, readCacheUsage, setCacheLimit } from "./translat
 
 const popup = chrome.extension.getViews({ type: "popup" }).includes(window);
 document.documentElement.classList.toggle("popup", popup);
-if (!popup) setupModelSettings();
+if (!popup) {
+  setupModelSettings();
+  const root = document.documentElement;
+  const dismissed = "settings-highlight-dismissed";
+  window.addEventListener("hashchange", () => root.classList.remove(dismissed));
+  document.addEventListener("click", ({ target }) => {
+    if (target.closest(".settings-nav a")) {
+      root.classList.remove(dismissed);
+      return;
+    }
+    const panel = document.querySelector(".panel:target");
+    if (panel && !panel.contains(target)) root.classList.add(dismissed);
+  });
+}
 setupGlossarySettings(popup);
 const enabledSwitch = document.querySelector("#enabled");
 const enabledLabel = document.querySelector("#enabled-label");
