@@ -166,7 +166,7 @@ async function applySetting(key, value) {
   }
 }
 
-const mebibyte = 1024 * 1024;
+const bytesPerMegabyte = 1_000_000;
 const cacheSettings = document.querySelector("#cache-settings");
 const cacheFields = cacheSettings.querySelector("fieldset");
 const cacheLimitInput = document.querySelector("#cache-limit");
@@ -174,7 +174,7 @@ const cacheMeter = document.querySelector("#cache-meter");
 const cacheUsage = document.querySelector("#cache-usage");
 const cacheStatus = document.querySelector("#cache-status");
 const cacheNumber = new Intl.NumberFormat("ja", { maximumFractionDigits: 2 });
-const invalidCacheLimitMessage = "キャッシュの上限をMiB単位の正の整数で入力してください。";
+const invalidCacheLimitMessage = "キャッシュの上限に1MB以上の数値を入力してください。";
 const cacheLimitUpdates = popup ? null : new BroadcastChannel("sns-translator-cache-limit");
 let requestedLimit;
 let editingCacheLimit = false;
@@ -190,12 +190,12 @@ async function updateCacheSettings(action, success, failure) {
     const { bytes, limit } = await readCacheUsage();
     cacheMeter.max = limit;
     cacheMeter.value = bytes;
-    const used = bytes > 0 && bytes / mebibyte < 0.01
-      ? "0.01MiB未満" : `${cacheNumber.format(bytes / mebibyte)}MiB`;
-    cacheUsage.textContent = `${used} / ${cacheNumber.format(limit / mebibyte)}MiB`;
+    const used = bytes > 0 && bytes / bytesPerMegabyte < 0.01
+      ? "0.01MB未満" : `${cacheNumber.format(bytes / bytesPerMegabyte)}MB`;
+    cacheUsage.textContent = `${used} / ${cacheNumber.format(limit / bytesPerMegabyte)}MB`;
     if (!pendingCacheLimits) {
       requestedLimit = limit;
-      if (!editingCacheLimit) cacheLimitInput.value = limit / mebibyte;
+      if (!editingCacheLimit) cacheLimitInput.value = limit / bytesPerMegabyte;
     }
     cacheFields.disabled = false;
     if (success !== null && canUpdateStatus()) cacheStatus.textContent = success;
@@ -206,7 +206,7 @@ async function updateCacheSettings(action, success, failure) {
 
 function applyCacheLimit() {
   if (cacheFields.disabled) return;
-  const limit = cacheLimitInput.valueAsNumber * mebibyte;
+  const limit = Math.round(cacheLimitInput.valueAsNumber * bytesPerMegabyte);
   if (!cacheLimitInput.validity.valid || !Number.isSafeInteger(limit)) {
     cacheStatus.textContent = invalidCacheLimitMessage;
     return;
